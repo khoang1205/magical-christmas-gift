@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cây Thông Noel Phép Thuật 🎄 - Hành Trình Khám Phá Hộp Quà Giáng Sinh 🎁</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Outfit:wght@300;400;600;700&family=Great+Vibes&family=Pacifico&display=swap" rel="stylesheet">
+  
+  <!-- MediaPipe Libraries for Hand Gesture Recognition -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Background / Render Canvas (Tree & Particle Glowing Text) -->
+  <canvas id="canvas"></canvas>
+
+  <!-- Hidden Video element for MediaPipe input -->
+  <video id="webcam" playsinline style="display: none;"></video>
+
+  <!-- Floating UI Overlay -->
+  <div class="ui-container">
+    
+    <!-- Top Header -->
+    <header class="header">
+      <h1 class="title">Merry Christmas <span class="glow-text">✨</span></h1>
+      <p class="subtitle">Giơ ngón tay (1, 2, 3, 5) để khám phá Hộp Quà Bí Mật... 🎁</p>
+    </header>
+
+    <!-- Center Greeting Banner -->
+    <div id="greeting-banner" class="greeting-banner hidden">
+      <h2 id="greeting-title">🎄 Merry Christmas! 🎁</h2>
+      <p id="greeting-sub">Chúc bạn một mùa Giáng Sinh ngập tràn Tình Yêu & Hạnh Phúc!</p>
+    </div>
+
+    <!-- Sleek Minimal Floating Ribbon Bar (Zero Che Khuyết Tree!) -->
+    <div id="gift-prompt-card" class="gift-prompt-card hidden">
+      <div class="ribbon-prompt-content">
+        <span class="ribbon-icon" id="gift-box-icon">🎁</span>
+        <span class="ribbon-text" id="gift-prompt-title">Phát Hiện Hộp Quà Bí Mật #1 ✨</span>
+        <span class="ribbon-hint">👉 Giơ ngón cái <b>👍</b> hoặc bấm nút để mở:</span>
+        <button id="open-gift-btn" class="ribbon-btn yes-btn">Mở Quà 👍</button>
+        <button id="skip-gift-btn" class="ribbon-btn no-btn">Để Sau 🙈</button>
+      </div>
+    </div>
+
+    <!-- Bottom Toast Notice -->
+    <div id="next-notice-toast" class="next-notice-toast hidden">
+      <span id="toast-icon">✨</span>
+      <span id="toast-text">👉 Giơ ngón tay tiếp theo (2, 3, 5...) để khám phá Hộp Quà tiếp nhé!</span>
+    </div>
+
+    <!-- Clean Docked Side Photo Card -->
+    <div id="photo-card" class="photo-card hidden">
+      <div class="photo-inner">
+        <button id="close-photo-btn" class="close-photo-btn">×</button>
+        <img id="photo-img" src="images/image1.jpeg" alt="Memory Photo">
+        <div class="photo-caption" id="photo-caption">Kỉ niệm Giáng Sinh #1 💖</div>
+      </div>
+    </div>
+
+    <!-- Special Confession Card Overlay -->
+    <div id="confession-card" class="confession-card hidden">
+      <div class="confession-content">
+        <div class="heart-pulse-icon">💓</div>
+        <h2 class="confession-title">1, 2, 3, 5...<br><span class="highlight-text">Em có đánh rơi nhịp nào không?</span></h2>
+        <p class="confession-sub">Nếu câu trả lời là CÓ... Noel này hẹn 1 buổi đi ăn với anh nhé? 🥂✨</p>
+        
+        <div class="confession-actions">
+          <button id="yes-btn" class="confession-btn yes-btn">Có chứ! 💖🥂</button>
+          <button id="no-btn" class="confession-btn no-btn">Không... 🙈</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Success Celebration Modal -->
+    <div id="success-modal" class="success-modal hidden">
+      <div class="success-content">
+        <div class="big-champagne">🥂✨🎄💖</div>
+        <h2>Chốt Kèo Noel Nhé! 🎉</h2>
+        <p>Chuẩn bị lên đồ thật đẹp, Noel này mình có hẹn đi ăn cùng nhau rồi! 🥂✨</p>
+        <button id="close-success-btn" class="icon-btn">💖 Thả tim & Tiếp Tục Mở Quà 🎁</button>
+      </div>
+    </div>
+
+    <!-- Bottom Dashboard -->
+    <div class="dashboard">
+      
+      <!-- Webcam Feed Preview Card -->
+      <div class="cam-card" id="cam-card">
+        <div class="cam-header">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Đang khởi tạo AI Camera...</span>
+        </div>
+        <div class="video-preview-wrapper">
+          <canvas id="gesture-canvas" width="160" height="120"></canvas>
+          <div class="cam-placeholder" id="cam-placeholder">
+            <span>📷</span>
+          </div>
+        </div>
+        <button id="toggle-cam-btn" class="icon-btn" title="Bật/Tắt Camera">
+          <span id="cam-icon">📹</span> Bật Camera (2 Tay)
+        </button>
+      </div>
+
+      <!-- Current Detected Gesture Display -->
+      <div class="gesture-status-card">
+        <div class="card-label">Cử chỉ nhận diện:</div>
+        <div class="gesture-badge" id="gesture-badge">
+          <span class="gesture-icon" id="gesture-icon">🎄</span>
+          <div class="gesture-details">
+            <span class="gesture-name" id="gesture-name">Cây thông Cổ điển</span>
+            <span class="gesture-sub" id="gesture-sub">Giơ ngón tay 1, 2, 3, 5 để tìm Hộp Quà Giáng Sinh 🎁</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls & Quick Confession Trigger -->
+      <div class="controls-card">
+        <div class="card-label">Mở Nhanh Quà & Hiệu ứng:</div>
+        <div class="btn-group">
+          <button class="mode-btn active" data-mode="0">🎄 Cây (0)</button>
+          <button class="mode-btn" data-mode="1">🎁 Quà 1</button>
+          <button class="mode-btn" data-mode="2">🎁 Quà 2</button>
+          <button class="mode-btn" data-mode="3">🎁 Quà 3</button>
+          <button class="mode-btn" data-mode="5">🎁 Quà 5</button>
+          <button class="mode-btn heart-mode-btn" data-mode="8">💖 Trái Tim</button>
+          <button id="trigger-confession-btn" class="mode-btn surprise-btn">💌 Hẹn Đi Ăn</button>
+        </div>
+        <div class="audio-control">
+          <button id="toggle-sound-btn" class="sound-btn">
+            <span id="sound-icon">🔊</span> Âm Nhạc: Bật
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- App Scripts -->
+  <script src="js/audioSynth.js"></script>
+  <script src="js/gestureDetector.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
