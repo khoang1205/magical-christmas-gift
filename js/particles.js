@@ -32,6 +32,11 @@ class Particle {
 
     this.life = 1.0;
     this.decay = Math.random() * 0.03 + 0.02;
+
+    // Slow Poetic Light Trail Properties
+    this.flowProgress = Math.random();
+    this.flowSpeed = 0.0005 + Math.random() * 0.0009; // Slow poetic flow speed (even slower)
+    this.flowOpacity = 1.0;
   }
 }
 
@@ -55,6 +60,11 @@ class ParticleSystem {
     this.activePhotoCaption = null;
     this.photoAlpha = 0;
     this.photoScale = 0;
+
+    // Geometry anchors (filled in initSystem) used by reveal orbit + helix wave
+    this.baseRadius = 0;
+    this.centerY = 0;
+    this.treeHeight = 0;
 
     this.initSystem();
   }
@@ -82,6 +92,10 @@ class ParticleSystem {
     const treeHeight = Math.min(width, height) * 0.65;
     const baseRadius = treeHeight * 0.40;
     const centerY = height * 0.52;
+
+    this.treeHeight = treeHeight;
+    this.baseRadius = baseRadius;
+    this.centerY = centerY;
 
     const totalCount = 2500;
 
@@ -195,7 +209,9 @@ class ParticleSystem {
     this.time += 0.02;
     this.frameCount++;
 
-    const rotSpeed = (this.mode === 1 || this.mode === 8) ? 0.022 : 0.008;
+    const isReveal = !!(this.activePhotoImg && this.photoScale > 0.1);
+    if (isReveal) this.rotationY = 0; // keep reveal shapes centered & clean
+    const rotSpeed = isReveal ? 0 : ((this.mode === 1 || this.mode === 8) ? 0.022 : 0.008);
     this.rotationY += rotSpeed;
 
     const width = this.canvas.width;
@@ -216,15 +232,46 @@ class ParticleSystem {
 
       let targetX, targetY, targetZ;
 
-      if (this.mode === 1) {
+      if (this.activePhotoImg && this.photoScale > 0.1) {
+        // ===== GIFT REVEAL: enlarged gift shape (each gift keeps its own shape) =====
+        const boost = 1.5;
+
+        if (this.mode === 1) {
+          targetX = p.neonX * boost;
+          targetY = p.neonY;
+          targetZ = p.neonZ * boost;
+        } else if (this.mode === 2) {
+          targetX = p.iceX * boost;
+          targetY = p.iceY;
+          targetZ = p.iceZ * boost;
+        } else if (this.mode === 3) {
+          targetX = p.solarX * boost * this.pulseScale;
+          targetY = p.solarY;
+          targetZ = p.solarZ * boost * this.pulseScale;
+        } else if (this.mode === 5) {
+          // Clean full-circle orbit around the photo (centered, symmetric)
+          const cy = height * 0.48;
+          const angle = this.time * 0.5 + (i / 2500) * Math.PI * 2;
+          const radius = 200 + (i % 100) * 0.4;
+          targetX = Math.cos(angle) * radius;
+          targetY = cy + Math.sin(angle) * radius;
+          targetZ = 0;
+        } else {
+          targetX = p.treeX; targetY = p.treeY; targetZ = p.treeZ;
+        }
+      } else if (this.mode === 1) {
+        p.flowOpacity = 1.0;
         targetX = p.neonX; targetY = p.neonY; targetZ = p.neonZ;
       } else if (this.mode === 2) {
+        p.flowOpacity = 1.0;
         targetX = p.iceX; targetY = p.iceY; targetZ = p.iceZ;
       } else if (this.mode === 3) {
+        p.flowOpacity = 1.0;
         targetX = p.solarX * this.pulseScale;
         targetY = p.solarY;
         targetZ = p.solarZ * this.pulseScale;
       } else if (this.mode === 5) {
+        p.flowOpacity = 1.0;
         const targetHandX = this.handPos.x * width;
         const targetHandY = this.handPos.y * height;
         const angle = this.time * 2.0 + (i * 0.003);
@@ -236,10 +283,12 @@ class ParticleSystem {
         p.alpha = 0.5 + Math.sin(this.time * 4 + p.phase) * 0.45;
         continue;
       } else if (this.mode === 8) {
+        p.flowOpacity = 1.0;
         targetX = p.heartX * this.pulseScale;
         targetY = p.heartY;
         targetZ = p.heartZ * this.pulseScale;
       } else {
+        p.flowOpacity = 1.0;
         targetX = p.treeX; targetY = p.treeY; targetZ = p.treeZ;
       }
 
@@ -250,7 +299,36 @@ class ParticleSystem {
       p.y += (targetY - p.y) * 0.12;
       p.z += (rz - p.z) * 0.12;
 
-      p.alpha = 0.5 + Math.sin(this.time * 4 + p.phase) * 0.45;
+      if (this.activePhotoImg && this.photoScale > 0.1) {
+        if (this.mode === 1) {
+          // Gift 1: spiral light streak tracing the xoắn ốc, sweeping top → bottom
+          const nh = (p.neonY - this.centerY) / (this.treeHeight * 0.575); // -1 (top) .. +1 (bottom)
+          const sweep = (this.time * 0.4) % 1.0;
+          const streakPos = -1 + sweep * 2;   // -1 (top) → +1 (bottom)
+          const dist = nh - streakPos;
+          const glow = Math.exp(-Math.abs(dist) * 10.0);
+          p.alpha = glow;
+        } else {
+          // Other gifts: only the vertical sweeping light streak is visible
+          const nh = (p.y - this.centerY) / (this.treeHeight * 0.6);
+          const sweep = (this.time * 0.35) % 1.0;
+          const streakPos = 0.5 - sweep;   // +0.5 (bottom) → -0.5 (top): đi lên
+          const dist = nh - streakPos;
+          const glow = Math.exp(-Math.abs(dist) * 5.0);
+          p.alpha = glow;
+        }
+      } else if (this.mode === 1) {
+        // ð QuÃ  1: dÃ²ng sÃ¡ng cháº¡y tá»« Äá»nh xuá»ng ÄÃ¡y theo vÃ²ng xoÃ¡y cÃ¢y thÃ´ng
+        const helixHeight = (this.treeHeight || height * 0.65) * 1.15;
+        const cy = this.centerY || height * 0.52;
+        const nh = (p.neonY - cy) / helixHeight;   // -0.5 (Äá»nh) â 0.5 (ÄÃ¡y)
+        const waves = 3;                                     // sá» dáº£i sÃ¡ng trÃªn cá»t
+        const speed = 2.0;                                   // cÃ ng lá»n â cháº¡y cÃ ng nhanh
+        const wave = Math.sin((nh + 0.5) * Math.PI * 2 * waves - this.time * speed);
+        p.alpha = Math.max(0.3, Math.min(1.0, 0.4 + 0.6 * (0.5 + 0.5 * wave)));
+      } else {
+        p.alpha = Math.max(0.3, Math.min(1.0, 0.5 + Math.sin(this.time * 4 + p.phase) * 0.45));
+      }
     }
 
     for (let i = 0; i < this.snowflakes.length; i++) {
@@ -309,8 +387,6 @@ class ParticleSystem {
     this.ctx.fillStyle = bgGrad;
     this.ctx.fillRect(0, 0, width, height);
 
-    this.ctx.globalCompositeOperation = 'lighter';
-
     // 1. Snowflakes
     for (let i = 0; i < this.snowflakes.length; i++) {
       const s = this.snowflakes[i];
@@ -321,20 +397,83 @@ class ParticleSystem {
       this.ctx.fill();
     }
 
-    if (this.frameCount % 2 === 0) {
-      this.particles.sort((a, b) => a.z - b.z);
+    // 2. DIRECT 3D CANVAS PHOTO & GOLD AURA RENDERER
+    if (this.photoAlpha > 0.05 && this.activePhotoImg && this.activePhotoImg.complete) {
+      this.ctx.save();
+
+      const imgW = 260 * this.photoScale;
+      const imgH = 325 * this.photoScale;
+      const px = width * 0.5;
+      const py = height * 0.48 + Math.sin(this.time * 2) * 8; // Floating 3D Bobbing
+
+      this.ctx.translate(px, py);
+      this.ctx.rotate(Math.sin(this.time * 1.5) * 0.03); // Floating 3D Tilt
+
+      try {
+        const outerR = Math.max(20, imgW * 0.7);
+        const innerR = Math.min(10, outerR * 0.3);
+        const auraGrad = this.ctx.createRadialGradient(0, 0, innerR, 0, 0, outerR);
+        auraGrad.addColorStop(0, 'rgba(255, 215, 0, 0.32)');
+        auraGrad.addColorStop(0.5, 'rgba(255, 117, 140, 0.16)');
+        auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        this.ctx.fillStyle = auraGrad;
+        this.ctx.fillRect(-imgW * 0.75, -imgH * 0.75, imgW * 1.5, imgH * 1.5);
+
+        // Gold Frame Border
+        this.ctx.strokeStyle = '#ffd700';
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeRect(-imgW / 2 - 4, -imgH / 2 - 4, imgW + 8, imgH + 8);
+
+        // Photo Image Draw — crisp & aspect-ratio preserving
+        const img = this.activePhotoImg;
+        const iw = img.naturalWidth || img.width || 1;
+        const ih = img.naturalHeight || img.height || 1;
+        const capH = 46 * this.photoScale;
+        const areaW = imgW;
+        const areaH = imgH - capH;
+        const s = Math.min(areaW / iw, areaH / ih);
+        const dw = iw * s;
+        const dh = ih * s;
+        const photoCenterY = -imgH / 2 + areaH / 2;
+
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalAlpha = this.photoAlpha;
+        this.ctx.imageSmoothingEnabled = true;
+        this.ctx.imageSmoothingQuality = 'high';
+        this.ctx.drawImage(img, -dw / 2, photoCenterY - dh / 2, dw, dh);
+
+        // Glowing Gold Caption
+        if (this.activePhotoCaption) {
+          this.ctx.font = 'bold italic 20px "Great Vibes", cursive';
+          this.ctx.fillStyle = '#ffd700';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText(this.activePhotoCaption, 0, imgH / 2 - 22);
+        }
+      } catch (err) {
+        console.warn("Photo render caught safely:", err);
+      }
+
+      this.ctx.restore();
     }
 
-    // 2. 3D Particles
+    this.ctx.globalCompositeOperation = 'lighter';
+
+    if (this.frameCount % 2 === 0) {
+      this.particles.sort((a, b) => (a.z || 0) - (b.z || 0));
+    }
+
+    // 3. 3D Particles
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
 
+      const pZ = (p.z !== undefined && !isNaN(p.z)) ? p.z : 0;
       const perspective = 600;
-      const scale = perspective / (perspective + p.z + 200);
+      const scale = perspective / (perspective + pZ + 200);
 
       const drawX = p.x;
       const drawY = p.y;
-      const drawSize = Math.max(0.5, p.size * scale);
+      const drawSize = Math.max(1.8, p.size * scale * 1.6);
 
       let renderColor = p.color;
 
@@ -352,61 +491,21 @@ class ParticleSystem {
         renderColor = `hsla(${hue}, 100%, 70%, `;
       }
 
-      this.ctx.fillStyle = renderColor + (p.alpha * scale).toFixed(2) + ')';
+      const pAlpha = (p.alpha !== undefined && !isNaN(p.alpha)) ? p.alpha : 0.8;
+      const safeAlpha = Math.max(0, Math.min(1.0, pAlpha * scale * 1.4)).toFixed(2);
+      this.ctx.fillStyle = renderColor + safeAlpha + ')';
       this.ctx.beginPath();
       this.ctx.arc(drawX, drawY, drawSize, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
-    // 3. Fireworks
+    // 4. Fireworks
     for (let i = 0; i < this.fireworks.length; i++) {
       const f = this.fireworks[i];
       this.ctx.fillStyle = f.color + f.life.toFixed(2) + ')';
       this.ctx.beginPath();
       this.ctx.arc(f.x, f.y, f.size * f.life, 0, Math.PI * 2);
       this.ctx.fill();
-    }
-
-    // 4. DIRECT 3D CANVAS PHOTO & PARTICLE GOLD AURA RENDERER (100% CINEMATIC!)
-    if (this.photoAlpha > 0.05 && this.activePhotoImg && this.activePhotoImg.complete) {
-      this.ctx.save();
-
-      const imgW = 280 * this.photoScale;
-      const imgH = 340 * this.photoScale;
-      const px = width * 0.5;
-      const py = height * 0.48 + Math.sin(this.time * 2) * 8; // Floating 3D Bobbing
-
-      this.ctx.translate(px, py);
-      this.ctx.rotate(Math.sin(this.time * 1.5) * 0.03); // Floating 3D Tilt
-
-      // Glowing Diamond & Gold Particle Aura behind Photo
-      const auraGrad = this.ctx.createRadialGradient(0, 0, 50, 0, 0, imgW * 0.9);
-      auraGrad.addColorStop(0, 'rgba(255, 215, 0, 0.45)');
-      auraGrad.addColorStop(0.5, 'rgba(255, 117, 140, 0.3)');
-      auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-      this.ctx.fillStyle = auraGrad;
-      this.ctx.fillRect(-imgW, -imgH, imgW * 2, imgH * 2);
-
-      // Gold Frame Border
-      this.ctx.strokeStyle = '#ffd700';
-      this.ctx.lineWidth = 4;
-      this.ctx.strokeRect(-imgW / 2 - 6, -imgH / 2 - 6, imgW + 12, imgH + 12);
-
-      // Photo Image Draw
-      this.ctx.globalCompositeOperation = 'source-over';
-      this.ctx.globalAlpha = this.photoAlpha;
-      this.ctx.drawImage(this.activePhotoImg, -imgW / 2, -imgH / 2 + 10, imgW, imgH - 50);
-
-      // Typewriter / Glowing Gold Caption
-      if (this.activePhotoCaption) {
-        this.ctx.font = 'bold italic 24px "Great Vibes", cursive';
-        this.ctx.fillStyle = '#ffd700';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(this.activePhotoCaption, 0, imgH / 2 - 12);
-      }
-
-      this.ctx.restore();
     }
 
     // 5. Canvas Particle Glowing Title

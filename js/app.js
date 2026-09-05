@@ -352,45 +352,54 @@ document.addEventListener('DOMContentLoaded', () => {
     statusText.textContent = 'Camera Sẵn Sàng (2 Tay)';
   }
 
-  toggleCamBtn.addEventListener('click', async () => {
+  async function startCamera() {
     if (!handsModel) initMediaPipe();
+    if (isCameraActive) return;
 
-    if (!isCameraActive) {
-      statusText.textContent = 'Đang bật camera (2 tay)...';
-      try {
-        if (!cameraUtil) {
-          cameraUtil = new window.Camera(webcamVideo, {
-            onFrame: async () => {
-              await handsModel.send({ image: webcamVideo });
-            },
-            width: 320,
-            height: 240
-          });
-        }
-        await cameraUtil.start();
-        isCameraActive = true;
-        statusDot.classList.add('active');
-        statusText.textContent = 'AI Tracking 2 Tay Active';
-        camPlaceholder.classList.add('hidden');
-        camIcon.textContent = '🛑';
-        toggleCamBtn.textContent = '🛑 Tắt Camera';
-      } catch (err) {
-        console.error("Camera access failed:", err);
-        statusText.textContent = 'Lỗi truy cập Camera';
-        alert('Không thể truy cập camera. Vui lòng cho phép quyền truy cập webcam!');
+    statusText.textContent = 'Đang bật camera (2 tay)...';
+    try {
+      if (!cameraUtil) {
+        cameraUtil = new window.Camera(webcamVideo, {
+          onFrame: async () => {
+            await handsModel.send({ image: webcamVideo });
+          },
+          width: 320,
+          height: 240
+        });
       }
+      await cameraUtil.start();
+      isCameraActive = true;
+      statusDot.classList.add('active');
+      statusText.textContent = 'AI Tracking 2 Tay Active';
+      camPlaceholder.classList.add('hidden');
+      camIcon.textContent = '🛑';
+      toggleCamBtn.textContent = '🛑 Tắt Camera';
+    } catch (err) {
+      console.error("Camera access failed:", err);
+      statusText.textContent = 'Lỗi truy cập Camera';
+      alert('Không thể truy cập camera. Vui lòng cho phép quyền truy cập webcam!');
+    }
+  }
+
+  async function stopCamera() {
+    if (cameraUtil) {
+      await cameraUtil.stop();
+    }
+    isCameraActive = false;
+    statusDot.classList.remove('active');
+    statusText.textContent = 'Camera Đã Tắt';
+    camPlaceholder.classList.remove('hidden');
+    gestureCtx.clearRect(0, 0, gestureCanvas.width, gestureCanvas.height);
+    camIcon.textContent = '📹';
+    toggleCamBtn.textContent = '📹 Bật Camera (2 Tay)';
+    switchMode(0);
+  }
+
+  toggleCamBtn.addEventListener('click', () => {
+    if (isCameraActive) {
+      stopCamera();
     } else {
-      if (cameraUtil) {
-        await cameraUtil.stop();
-      }
-      isCameraActive = false;
-      statusDot.classList.remove('active');
-      statusText.textContent = 'Camera Đã Tắt';
-      camPlaceholder.classList.remove('hidden');
-      gestureCtx.clearRect(0, 0, gestureCanvas.width, gestureCanvas.height);
-      camIcon.textContent = '📹';
-      toggleCamBtn.textContent = '📹 Bật Camera (2 Tay)';
-      switchMode(0);
+      startCamera();
     }
   });
 
@@ -401,5 +410,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   initMediaPipe();
+  startCamera(); // Auto-open camera on page load (no click needed)
   renderLoop();
 });
