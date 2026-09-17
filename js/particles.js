@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 export class ParticleSystem {
   constructor(canvas) {
@@ -67,22 +68,84 @@ export class ParticleSystem {
     this.camera.position.set(0, 0, 750);
     this.camera.lookAt(0, 0, 0);
 
-    // 3. Raycaster for hand 2D -> 3D mapping
+    // 4. Raycaster for hand 2D -> 3D mapping
     this.raycaster = new THREE.Raycaster();
     this.planeZ0 = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
-    // 4. Post-processing Bloom
+    // 5. OrbitControls for 360 degree 3D rotation with mouse/touch
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.05;
+    this.controls.maxPolarAngle = Math.PI / 2 + 0.25;
+    this.controls.minDistance = 250;
+    this.controls.maxDistance = 1600;
+
+    // 6. Post-processing Bloom
     this.composer = new EffectComposer(this.renderer);
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(this.width, this.height),
-      1.25, // strength
-      0.55, // radius
-      0.12  // threshold
+      1.35, // strength
+      0.60, // radius
+      0.10  // threshold
     );
     this.composer.addPass(this.bloomPass);
+
+    this.init3DStar();
+    this.init3DOrnaments();
+  }
+
+  init3DStar() {
+    const starGeo = new THREE.OctahedronGeometry(32, 0);
+    const starMat = new THREE.MeshBasicMaterial({
+      color: 0xffea00,
+      wireframe: false
+    });
+    this.starMesh = new THREE.Mesh(starGeo, starMat);
+    this.starMesh.position.set(0, 250, 0);
+
+    const haloGeo = new THREE.OctahedronGeometry(48, 0);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0xffd700,
+      transparent: true,
+      opacity: 0.45,
+      blending: THREE.AdditiveBlending
+    });
+    this.starHalo = new THREE.Mesh(haloGeo, haloMat);
+    this.starHalo.position.set(0, 250, 0);
+
+    this.scene.add(this.starMesh);
+    this.scene.add(this.starHalo);
+  }
+
+  init3DOrnaments() {
+    const count = 130;
+    const sphereGeo = new THREE.SphereGeometry(7, 16, 16);
+    this.ornaments = [];
+    const colors = [0xff2244, 0xffd700, 0x00d2ff, 0xff00bb, 0xffffff];
+
+    for (let i = 0; i < count; i++) {
+      const progress = 0.12 + (i / count) * 0.80;
+      const y = (progress - 0.5) * 520;
+      const radius = progress * 230 * 0.82;
+      const theta = Math.random() * Math.PI * 2;
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: colors[i % colors.length],
+        transparent: true,
+        opacity: 0.95
+      });
+      const mesh = new THREE.Mesh(sphereGeo, mat);
+      const x = radius * Math.cos(theta);
+      const z = radius * Math.sin(theta);
+      mesh.position.set(x, y - 20, z);
+      mesh.userData = { origX: x, origY: y - 20, origZ: z, phase: Math.random() * Math.PI * 2 };
+
+      this.scene.add(mesh);
+      this.ornaments.push(mesh);
+    }
   }
 
   setPromptText(text) {
@@ -504,6 +567,41 @@ export class ParticleSystem {
   update() {
     this.time += 0.02;
     this.material.uniforms.uTime.value = this.time;
+
+    if (this.controls) this.controls.update();
+
+    // 3D Glowing Star Animation
+    if (this.starMesh) {
+      this.starMesh.rotation.y += 0.02;
+      this.starMesh.rotation.z = Math.sin(this.time * 2) * 0.08;
+      this.starHalo.rotation.y -= 0.015;
+      const s = 1.0 + Math.sin(this.time * 4) * 0.15;
+      this.starHalo.scale.set(s, s, s);
+      const isClassicTree = (this.mode === 0 && (!this.activePhotoImg || this.photoScale <= 0.1));
+      this.starMesh.visible = isClassicTree;
+      this.starHalo.visible = isClassicTree;
+    }
+
+    // 3D Baubles/Ornaments Animation
+    if (this.ornaments) {
+      const isClassicTree = (this.mode === 0 && (!this.activePhotoImg || this.photoScale <= 0.1));
+      const cosR = Math.cos(this.rotationY);
+      const sinR = Math.sin(this.rotationY);
+
+      for (let i = 0; i < this.ornaments.length; i++) {
+        const o = this.ornaments[i];
+        if (isClassicTree) {
+          o.visible = true;
+          const rx = o.userData.origX * cosR - o.userData.origZ * sinR;
+          const rz = o.userData.origX * sinR + o.userData.origZ * cosR;
+          o.position.x = rx;
+          o.position.z = rz;
+          o.position.y = o.userData.origY + Math.sin(this.time * 3 + o.userData.phase) * 4;
+        } else {
+          o.visible = false;
+        }
+      }
+    }
 
     const isReveal = !!(this.activePhotoImg && this.photoScale > 0.1);
 
