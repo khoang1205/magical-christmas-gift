@@ -2,6 +2,8 @@
    Main Application Orchestrator (Auto-hide previous photo & Zero sound for 1,2,3,5)
    ========================================================================== */
 
+import { ParticleSystem } from './particles.js';
+
 document.addEventListener('DOMContentLoaded', () => {
   const mainCanvas = document.getElementById('canvas');
   const webcamVideo = document.getElementById('webcam');
@@ -98,8 +100,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function resizeCanvas() {
     mainCanvas.width = window.innerWidth;
     mainCanvas.height = window.innerHeight;
-    if (particleSystem) {
-      particleSystem.initSystem();
+    if (particleSystem && particleSystem.resize) {
+      particleSystem.resize(window.innerWidth, window.innerHeight);
     }
   }
   window.addEventListener('resize', resizeCanvas);

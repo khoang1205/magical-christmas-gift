@@ -1,81 +1,99 @@
 /* ==========================================================================
-   Ultra-Luxury 3D Canvas Photo & Particle Render Engine
-   Renders photos directly inside the 3D Canvas with glowing particle borders,
-   diamond sparkles, floating 3D physics, and zero HTML box clutter!
+   Ultra-Luxury Three.js WebGL 3D Photo & Particle Render Engine (r160)
+   Features:
+   - 20,000+ GPU Accelerated Particles using THREE.Points & Custom Shaders
+   - UnrealBloomPass Post-Processing for Glowing Magical Aura
+   - Real 3D Z-Buffer & Additive Blending
+   - 3D Floating Canvas Photo Mesh with Gold Aura & Light Trails
    ========================================================================== */
 
-class Particle {
-  constructor(x, y, z, color, size, type = 'foliage') {
-    this.x = x;
-    this.y = y;
-    this.z = z;
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-    this.treeX = x; this.treeY = y; this.treeZ = z;
-    this.neonX = x; this.neonY = y; this.neonZ = z;
-    this.iceX = x;  this.iceY = y;  this.iceZ = z;
-    this.solarX = x;this.solarY = y;this.solarZ = z;
-    this.heartX = x;this.heartY = y;this.heartZ = z;
-
-    this.vx = (Math.random() - 0.5) * 0.5;
-    this.vy = (Math.random() - 0.5) * 0.5;
-    this.vz = (Math.random() - 0.5) * 0.5;
-
-    this.baseColor = color;
-    this.color = color;
-    this.size = size;
-    this.baseSize = size;
-    this.type = type;
-
-    this.alpha = Math.random() * 0.5 + 0.5;
-    this.phase = Math.random() * Math.PI * 2;
-    this.hueShift = Math.random() * 360;
-
-    this.life = 1.0;
-    this.decay = Math.random() * 0.03 + 0.02;
-
-    // Slow Poetic Light Trail Properties
-    this.flowProgress = Math.random();
-    this.flowSpeed = 0.0005 + Math.random() * 0.0009; // Slow poetic flow speed (even slower)
-    this.flowOpacity = 1.0;
-  }
-}
-
-class ParticleSystem {
+export class ParticleSystem {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.particles = [];
-    this.snowflakes = [];
-    this.fireworks = [];
+    this.width = canvas.width || window.innerWidth;
+    this.height = canvas.height || window.innerHeight;
+
     this.mode = 0;
-    this.rotationY = 0;
     this.time = 0;
+    this.rotationY = 0;
     this.handPos = { x: 0.5, y: 0.5 };
+    this.targetHand3D = new THREE.Vector3(0, 0, 0);
     this.pulseScale = 1.0;
     this.activePromptText = null;
-    this.frameCount = 0;
 
-    // Active Canvas Photo Rendering State
+    // Photo state
     this.activePhotoImg = null;
     this.activePhotoCaption = null;
     this.photoAlpha = 0;
     this.photoScale = 0;
 
-    // Geometry anchors (filled in initSystem) used by reveal orbit + helix wave
-    this.baseRadius = 0;
-    this.centerY = 0;
-    this.treeHeight = 0;
+    // Three.js Core Components
+    this.initThree();
 
-    this.initSystem();
+    // System Geometry Anchors
+    this.particleCount = 22000;
+    this.snowCount = 800;
+
+    this.initBuffers();
+    this.initPhotoMesh();
+    this.initPromptMesh();
+    this.initSnow();
+
+    this.fireworks = [];
+  }
+
+  initThree() {
+    // 1. Renderer
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance"
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(this.width, this.height);
+    this.renderer.toneMapping = THREE.ReinhardToneMapping;
+
+    // 2. Scene & Camera
+    this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.FogExp2(0x040a14, 0.0005);
+
+    this.camera = new THREE.PerspectiveCamera(60, this.width / this.height, 1, 4000);
+    this.camera.position.set(0, 0, 750);
+    this.camera.lookAt(0, 0, 0);
+
+    // 3. Raycaster for hand 2D -> 3D mapping
+    this.raycaster = new THREE.Raycaster();
+    this.planeZ0 = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
+    // 4. Post-processing Bloom
+    this.composer = new EffectComposer(this.renderer);
+    const renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(renderPass);
+
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(this.width, this.height),
+      1.25, // strength
+      0.55, // radius
+      0.12  // threshold
+    );
+    this.composer.addPass(this.bloomPass);
   }
 
   setPromptText(text) {
     this.activePromptText = text;
+    this.updatePromptTexture();
   }
 
   setActivePhoto(imgElement, captionText) {
     this.activePhotoImg = imgElement;
     this.activePhotoCaption = captionText;
+    this.updatePhotoTexture();
   }
 
   clearActivePhoto() {
@@ -83,122 +101,400 @@ class ParticleSystem {
     this.activePhotoCaption = null;
   }
 
-  initSystem() {
-    this.particles = [];
-    this.snowflakes = [];
-    
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-    const treeHeight = Math.min(width, height) * 0.65;
-    const baseRadius = treeHeight * 0.40;
-    const centerY = height * 0.52;
+  initBuffers() {
+    const count = this.particleCount;
 
+    this.positions = new Float32Array(count * 3);
+    this.colors = new Float32Array(count * 3);
+    this.sizes = new Float32Array(count);
+    this.alphas = new Float32Array(count);
+
+    // Stored target positions per mode
+    this.treePos = new Float32Array(count * 3);
+    this.neonPos = new Float32Array(count * 3);
+    this.icePos  = new Float32Array(count * 3);
+    this.solarPos= new Float32Array(count * 3);
+    this.heartPos= new Float32Array(count * 3);
+
+    this.hueShifts = new Float32Array(count);
+    this.phases = new Float32Array(count);
+
+    const treeHeight = 520;
     this.treeHeight = treeHeight;
+    const baseRadius = 230;
     this.baseRadius = baseRadius;
+    const centerY = -20;
     this.centerY = centerY;
 
-    const totalCount = 2500;
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
 
-    for (let i = 0; i < totalCount; i++) {
-      const progress = i / totalCount;
+    for (let i = 0; i < count; i++) {
+      const progress = i / count;
       const y = (progress - 0.5) * treeHeight;
 
-      // MODE 0: CLASSIC TREE
+      // --- MODE 0: CLASSIC 3D CHRISTMAS TREE ---
       const tierCount = 5;
       const tierProgress = (progress * tierCount) % 1;
       const tierFactor = 0.55 + 0.45 * Math.sin(tierProgress * Math.PI);
       const maxR = progress * baseRadius * tierFactor;
       const radius = maxR * Math.sqrt(Math.random()) * (0.8 + Math.random() * 0.3);
 
-      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
       const theta = i * goldenAngle;
-
       const tx = radius * Math.cos(theta);
       const ty = centerY + y;
       const tz = radius * Math.sin(theta);
 
-      let color;
-      if (Math.random() < 0.7) {
-        color = `hsla(${135 + Math.random() * 35}, 90%, ${40 + Math.random() * 30}%, `;
-      } else {
-        color = `hsla(${42 + Math.random() * 18}, 95%, 62%, `;
-      }
+      this.treePos[i*3+0] = tx;
+      this.treePos[i*3+1] = ty;
+      this.treePos[i*3+2] = tz;
 
-      const p = new Particle(tx, ty, tz, color, Math.random() * 2.8 + 1.5, i < 150 ? 'star' : 'foliage');
-      p.treeX = tx; p.treeY = ty; p.treeZ = tz;
+      // --- MODE 1: CYBERPUNK HELICAL VORTEX ---
+      const helixTurn = progress * Math.PI * 2 * 9;
+      const helixRadius = (0.2 + progress * 0.8) * baseRadius * 1.3;
+      this.neonPos[i*3+0] = helixRadius * Math.cos(helixTurn + (i % 2 === 0 ? 0 : Math.PI));
+      this.neonPos[i*3+1] = centerY + (progress - 0.5) * treeHeight * 1.15;
+      this.neonPos[i*3+2] = helixRadius * Math.sin(helixTurn + (i % 2 === 0 ? 0 : Math.PI));
 
-      // MODE 1: CYBERPUNK HELICAL VORTEX
-      const helixTurn = progress * Math.PI * 2 * 8;
-      const helixRadius = (0.2 + progress * 0.8) * baseRadius * 1.25;
-      p.neonX = helixRadius * Math.cos(helixTurn + (i % 2 === 0 ? 0 : Math.PI));
-      p.neonY = centerY + (progress - 0.5) * treeHeight * 1.15;
-      p.neonZ = helixRadius * Math.sin(helixTurn + (i % 2 === 0 ? 0 : Math.PI));
-
-      // MODE 2: FROSTED ICE CRYSTAL CYLINDER
-      const iceRadius = baseRadius * 0.85;
+      // --- MODE 2: FROSTED ICE CRYSTAL CYLINDER ---
+      const iceRadius = baseRadius * 0.9;
       const iceAngle = Math.random() * Math.PI * 2;
-      p.iceX = iceRadius * Math.cos(iceAngle);
-      p.iceY = centerY + (Math.random() - 0.5) * treeHeight * 1.1;
-      p.iceZ = iceRadius * Math.sin(iceAngle);
+      this.icePos[i*3+0] = iceRadius * Math.cos(iceAngle);
+      this.icePos[i*3+1] = centerY + (Math.random() - 0.5) * treeHeight * 1.1;
+      this.icePos[i*3+2] = iceRadius * Math.sin(iceAngle);
 
-      // MODE 3: GOLDEN SOLAR STARBURST SPHERE
-      const sphereR = baseRadius * 0.95;
+      // --- MODE 3: GOLDEN SOLAR STARBURST SPHERE ---
+      const sphereR = baseRadius * 1.05;
       const phi = Math.acos(2 * Math.random() - 1);
       const lam = 2 * Math.PI * Math.random();
-      p.solarX = sphereR * Math.sin(phi) * Math.cos(lam);
-      p.solarY = centerY + sphereR * Math.cos(phi) * 0.8;
-      p.solarZ = sphereR * Math.sin(phi) * Math.sin(lam);
+      this.solarPos[i*3+0] = sphereR * Math.sin(phi) * Math.cos(lam);
+      this.solarPos[i*3+1] = centerY + sphereR * Math.cos(phi) * 0.85;
+      this.solarPos[i*3+2] = sphereR * Math.sin(phi) * Math.sin(lam);
 
-      // MODE 8: 3D PARAMETRIC HEART
+      // --- MODE 8: 3D PARAMETRIC HEART ---
       const tHeart = progress * Math.PI * 2;
-      const heartScale = Math.min(width, height) * 0.016;
+      const heartScale = 14.0;
       const hx = 16 * Math.pow(Math.sin(tHeart), 3) * heartScale;
-      const hy = -(13 * Math.cos(tHeart) - 5 * Math.cos(2*tHeart) - 2 * Math.cos(3*tHeart) - Math.cos(4*tHeart)) * heartScale;
-      const hz = (Math.random() - 0.5) * 100;
+      const hy = (13 * Math.cos(tHeart) - 5 * Math.cos(2*tHeart) - 2 * Math.cos(3*tHeart) - Math.cos(4*tHeart)) * heartScale;
+      const hz = (Math.random() - 0.5) * 120;
+      this.heartPos[i*3+0] = hx + (Math.random() - 0.5) * 25;
+      this.heartPos[i*3+1] = centerY + hy + (Math.random() - 0.5) * 25;
+      this.heartPos[i*3+2] = hz;
 
-      p.heartX = hx + (Math.random() - 0.5) * 20;
-      p.heartY = centerY + hy + (Math.random() - 0.5) * 20;
-      p.heartZ = hz;
+      // Colors & Properties
+      let color = new THREE.Color();
+      if (i < 300) {
+        // Star / Ornaments
+        color.setHSL(0.12, 1.0, 0.7); // Gold
+      } else if (Math.random() < 0.7) {
+        color.setHSL(0.38 + Math.random() * 0.08, 0.9, 0.45 + Math.random() * 0.2); // Emerald Green
+      } else {
+        color.setHSL(0.98 + Math.random() * 0.05, 0.95, 0.6); // Crimson Red
+      }
 
-      this.particles.push(p);
+      this.colors[i*3+0] = color.r;
+      this.colors[i*3+1] = color.g;
+      this.colors[i*3+2] = color.b;
+
+      this.positions[i*3+0] = tx;
+      this.positions[i*3+1] = ty;
+      this.positions[i*3+2] = tz;
+
+      this.sizes[i] = i < 300 ? (Math.random() * 8.0 + 5.0) : (Math.random() * 4.0 + 2.0);
+      this.alphas[i] = Math.random() * 0.6 + 0.4;
+      this.hueShifts[i] = Math.random() * 360;
+      this.phases[i] = Math.random() * Math.PI * 2;
     }
 
-    for (let i = 0; i < 350; i++) {
-      const x = (Math.random() - 0.5) * width * 1.5;
-      const y = (Math.random() - 0.5) * height * 1.5;
-      const z = (Math.random() - 0.5) * 400;
-      const p = new Particle(x, y, z, `hsla(200, 100%, 95%, `, Math.random() * 2.5 + 1.0, 'snow');
-      p.vy = Math.random() * 1.6 + 0.7;
-      p.vx = (Math.random() - 0.5) * 0.5;
-      this.snowflakes.push(p);
-    }
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+    this.geometry.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+    this.geometry.setAttribute('alpha', new THREE.BufferAttribute(this.alphas, 1));
+
+    // Custom Glowing Particle Shader Material
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+        uTime: { value: 0 }
+      },
+      vertexShader: /* glsl */`
+        attribute float size;
+        attribute float alpha;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vAlpha;
+        uniform float uPixelRatio;
+
+        void main() {
+          vColor = color;
+          vAlpha = alpha;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * uPixelRatio * (600.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        varying vec3 vColor;
+        varying float vAlpha;
+
+        void main() {
+          float dist = length(gl_PointCoord - vec2(0.5));
+          if (dist > 0.5) discard;
+          float glow = 1.0 - smoothstep(0.0, 0.5, dist);
+          glow = pow(glow, 1.4);
+          gl_FragColor = vec4(vColor * 1.3, vAlpha * glow);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    this.points = new THREE.Points(this.geometry, this.material);
+    this.scene.add(this.points);
   }
 
-  triggerFirework(x, y) {
-    const burstCount = 45;
-    const isHeart = this.mode === 8;
-    const hue = isHeart ? (Math.random() < 0.5 ? 340 : 355) : Math.random() * 360;
+  initPhotoMesh() {
+    this.photoCanvas = document.createElement('canvas');
+    this.photoCanvas.width = 512;
+    this.photoCanvas.height = 640;
+    this.photoCtx = this.photoCanvas.getContext('2d');
 
-    for (let i = 0; i < burstCount; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 7 + 2;
-      const p = new Particle(x, y, 0, `hsla(${hue}, 100%, 75%, `, Math.random() * 3.0 + 1.8, 'firework');
-      p.vx = Math.cos(angle) * speed;
-      p.vy = Math.sin(angle) * speed;
-      p.decay = Math.random() * 0.035 + 0.02;
-      this.fireworks.push(p);
+    this.photoTexture = new THREE.CanvasTexture(this.photoCanvas);
+    this.photoTexture.minFilter = THREE.LinearFilter;
+    this.photoTexture.magFilter = THREE.LinearFilter;
+
+    // Photo Plane Mesh
+    const planeGeo = new THREE.PlaneGeometry(240, 300);
+    const planeMat = new THREE.MeshBasicMaterial({
+      map: this.photoTexture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthTest: true
+    });
+    this.photoMesh = new THREE.Mesh(planeGeo, planeMat);
+    this.photoMesh.position.set(0, 10, 50);
+    this.photoMesh.visible = false;
+    this.scene.add(this.photoMesh);
+
+    // Glowing Aura Plane Mesh (Behind photo)
+    const auraGeo = new THREE.PlaneGeometry(360, 440);
+    this.auraCanvas = document.createElement('canvas');
+    this.auraCanvas.width = 256;
+    this.auraCanvas.height = 256;
+    const actx = this.auraCanvas.getContext('2d');
+    const grad = actx.createRadialGradient(128, 128, 10, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255, 215, 0, 0.6)');
+    grad.addColorStop(0.5, 'rgba(255, 117, 140, 0.3)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    actx.fillStyle = grad;
+    actx.fillRect(0, 0, 256, 256);
+
+    const auraTexture = new THREE.CanvasTexture(this.auraCanvas);
+    const auraMat = new THREE.MeshBasicMaterial({
+      map: auraTexture,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
+    this.auraMesh.position.set(0, 10, 45);
+    this.auraMesh.visible = false;
+    this.scene.add(this.auraMesh);
+  }
+
+  updatePhotoTexture() {
+    if (!this.activePhotoImg || !this.activePhotoImg.complete) return;
+
+    const ctx = this.photoCtx;
+    const w = 512;
+    const h = 640;
+    ctx.clearRect(0, 0, w, h);
+
+    // Gold Outer Border & Background
+    ctx.fillStyle = '#ffd700';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = '#0a0512';
+    ctx.fillRect(8, 8, w - 16, h - 16);
+
+    // Image Draw
+    const img = this.activePhotoImg;
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+
+    const areaW = w - 32;
+    const areaH = h - 110;
+    const scale = Math.min(areaW / iw, areaH / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = 16 + (areaW - dw) / 2;
+    const dy = 16 + (areaH - dh) / 2;
+
+    ctx.drawImage(img, dx, dy, dw, dh);
+
+    // Gold Inner Border
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(dx, dy, dw, dh);
+
+    // Caption
+    if (this.activePhotoCaption) {
+      ctx.font = 'bold italic 34px "Great Vibes", cursive';
+      ctx.fillStyle = '#ffd700';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(255, 215, 0, 0.8)';
+      ctx.shadowBlur = 10;
+      ctx.fillText(this.activePhotoCaption, w / 2, h - 40);
+      ctx.shadowBlur = 0;
     }
+
+    this.photoTexture.needsUpdate = true;
+  }
+
+  initPromptMesh() {
+    this.promptCanvas = document.createElement('canvas');
+    this.promptCanvas.width = 1024;
+    this.promptCanvas.height = 128;
+    this.promptCtx = this.promptCanvas.getContext('2d');
+
+    this.promptTexture = new THREE.CanvasTexture(this.promptCanvas);
+    const planeGeo = new THREE.PlaneGeometry(500, 62.5);
+    const planeMat = new THREE.MeshBasicMaterial({
+      map: this.promptTexture,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.promptMesh = new THREE.Mesh(planeGeo, planeMat);
+    this.promptMesh.position.set(0, 240, 50);
+    this.promptMesh.visible = false;
+    this.scene.add(this.promptMesh);
+  }
+
+  updatePromptTexture() {
+    if (!this.activePromptText) {
+      this.promptMesh.visible = false;
+      return;
+    }
+
+    const ctx = this.promptCtx;
+    const w = 1024;
+    const h = 128;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.font = 'bold 44px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowColor = 'rgba(255, 215, 0, 0.9)';
+    ctx.shadowBlur = 16;
+    ctx.fillText(this.activePromptText, w / 2, h / 2 + 14);
+
+    this.promptTexture.needsUpdate = true;
+    this.promptMesh.visible = true;
+  }
+
+  initSnow() {
+    const snowPositions = new Float32Array(this.snowCount * 3);
+    this.snowVelocities = new Float32Array(this.snowCount * 3);
+
+    for (let i = 0; i < this.snowCount; i++) {
+      snowPositions[i*3+0] = (Math.random() - 0.5) * 1200;
+      snowPositions[i*3+1] = (Math.random() - 0.5) * 1000;
+      snowPositions[i*3+2] = (Math.random() - 0.5) * 800;
+
+      this.snowVelocities[i*3+0] = (Math.random() - 0.5) * 0.6;
+      this.snowVelocities[i*3+1] = - (Math.random() * 1.5 + 0.8);
+      this.snowVelocities[i*3+2] = (Math.random() - 0.5) * 0.4;
+    }
+
+    const snowGeo = new THREE.BufferGeometry();
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3));
+
+    const snowMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 4.0,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending
+    });
+
+    this.snowPoints = new THREE.Points(snowGeo, snowMat);
+    this.scene.add(this.snowPoints);
+  }
+
+  triggerFirework(x2D, y2D) {
+    const count = 60;
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    // Map 2D screen coords to 3D plane z=50
+    const ndc = new THREE.Vector2(
+      (x2D / this.width) * 2 - 1,
+      -(y2D / this.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const target3D = new THREE.Vector3();
+    this.raycaster.ray.intersectPlane(this.planeZ0, target3D);
+
+    const hue = Math.random();
+
+    for (let i = 0; i < count; i++) {
+      positions[i*3+0] = target3D.x;
+      positions[i*3+1] = target3D.y;
+      positions[i*3+2] = target3D.z + 50;
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 9 + 3;
+      const phi = (Math.random() - 0.5) * Math.PI;
+
+      velocities[i*3+0] = Math.cos(angle) * Math.cos(phi) * speed;
+      velocities[i*3+1] = Math.sin(angle) * Math.cos(phi) * speed;
+      velocities[i*3+2] = Math.sin(phi) * speed;
+
+      const c = new THREE.Color().setHSL(hue, 1.0, 0.65);
+      colors[i*3+0] = c.r;
+      colors[i*3+1] = c.g;
+      colors[i*3+2] = c.b;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 5.0,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending
+    });
+
+    const fw = new THREE.Points(geo, mat);
+    fw.userData = { velocities, life: 1.0, decay: Math.random() * 0.03 + 0.02 };
+    this.scene.add(fw);
+    this.fireworks.push(fw);
   }
 
   setMode(mode, handPos = { x: 0.5, y: 0.5 }) {
     this.mode = mode;
-    if (handPos) this.handPos = handPos;
+    if (handPos) {
+      this.handPos = handPos;
+      // Map handPos 2D (0..1) to 3D world coords
+      const ndc = new THREE.Vector2(
+        (handPos.x * 2 - 1),
+        -(handPos.y * 2 - 1)
+      );
+      this.raycaster.setFromCamera(ndc, this.camera);
+      this.raycaster.ray.intersectPlane(this.planeZ0, this.targetHand3D);
+    }
 
     if (mode === 2 || mode === 5 || mode === 8) {
       for (let i = 0; i < 3; i++) {
         setTimeout(() => {
-          const fx = (Math.random() * 0.6 + 0.2) * this.canvas.width;
-          const fy = (Math.random() * 0.5 + 0.2) * this.canvas.height;
+          const fx = (Math.random() * 0.6 + 0.2) * this.width;
+          const fy = (Math.random() * 0.5 + 0.2) * this.height;
           this.triggerFirework(fx, fy);
         }, i * 200);
       }
@@ -207,153 +503,11 @@ class ParticleSystem {
 
   update() {
     this.time += 0.02;
-    this.frameCount++;
+    this.material.uniforms.uTime.value = this.time;
 
     const isReveal = !!(this.activePhotoImg && this.photoScale > 0.1);
-    if (isReveal) this.rotationY = 0; // keep reveal shapes centered & clean
-    const rotSpeed = isReveal ? 0 : ((this.mode === 1 || this.mode === 8) ? 0.022 : 0.008);
-    this.rotationY += rotSpeed;
 
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-    const centerX = width * 0.5;
-
-    if (this.mode === 3 || this.mode === 8) {
-      this.pulseScale = 1.0 + Math.sin(this.time * 4) * 0.15;
-    } else {
-      this.pulseScale = 1.0;
-    }
-
-    const cosR = Math.cos(this.rotationY);
-    const sinR = Math.sin(this.rotationY);
-
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
-
-      let targetX, targetY, targetZ;
-
-      if (this.activePhotoImg && this.photoScale > 0.1) {
-        // ===== GIFT REVEAL: enlarged gift shape (each gift keeps its own shape) =====
-        const boost = 1.5;
-
-        if (this.mode === 1) {
-          targetX = p.neonX * boost;
-          targetY = p.neonY;
-          targetZ = p.neonZ * boost;
-        } else if (this.mode === 2) {
-          targetX = p.iceX * boost;
-          targetY = p.iceY;
-          targetZ = p.iceZ * boost;
-        } else if (this.mode === 3) {
-          targetX = p.solarX * boost * this.pulseScale;
-          targetY = p.solarY;
-          targetZ = p.solarZ * boost * this.pulseScale;
-        } else if (this.mode === 5) {
-          // Clean full-circle orbit around the photo (centered, symmetric)
-          const cy = height * 0.48;
-          const angle = this.time * 0.5 + (i / 2500) * Math.PI * 2;
-          const radius = 200 + (i % 100) * 0.4;
-          targetX = Math.cos(angle) * radius;
-          targetY = cy + Math.sin(angle) * radius;
-          targetZ = 0;
-        } else {
-          targetX = p.treeX; targetY = p.treeY; targetZ = p.treeZ;
-        }
-      } else if (this.mode === 1) {
-        p.flowOpacity = 1.0;
-        targetX = p.neonX; targetY = p.neonY; targetZ = p.neonZ;
-      } else if (this.mode === 2) {
-        p.flowOpacity = 1.0;
-        targetX = p.iceX; targetY = p.iceY; targetZ = p.iceZ;
-      } else if (this.mode === 3) {
-        p.flowOpacity = 1.0;
-        targetX = p.solarX * this.pulseScale;
-        targetY = p.solarY;
-        targetZ = p.solarZ * this.pulseScale;
-      } else if (this.mode === 5) {
-        p.flowOpacity = 1.0;
-        const targetHandX = this.handPos.x * width;
-        const targetHandY = this.handPos.y * height;
-        const angle = this.time * 2.0 + (i * 0.003);
-        const radius = (i % 250) * 1.1 + 20;
-
-        p.x += (targetHandX + Math.cos(angle) * radius - p.x) * 0.1;
-        p.y += (targetHandY + Math.sin(angle * 0.8) * radius * 0.5 - p.y) * 0.1;
-        p.z += (Math.sin(angle) * radius - p.z) * 0.1;
-        p.alpha = 0.5 + Math.sin(this.time * 4 + p.phase) * 0.45;
-        continue;
-      } else if (this.mode === 8) {
-        p.flowOpacity = 1.0;
-        targetX = p.heartX * this.pulseScale;
-        targetY = p.heartY;
-        targetZ = p.heartZ * this.pulseScale;
-      } else {
-        p.flowOpacity = 1.0;
-        targetX = p.treeX; targetY = p.treeY; targetZ = p.treeZ;
-      }
-
-      const rx = targetX * cosR - targetZ * sinR;
-      const rz = targetX * sinR + targetZ * cosR;
-
-      p.x += (centerX + rx - p.x) * 0.12;
-      p.y += (targetY - p.y) * 0.12;
-      p.z += (rz - p.z) * 0.12;
-
-      if (this.activePhotoImg && this.photoScale > 0.1) {
-        if (this.mode === 1) {
-          // Gift 1: spiral light streak tracing the xoắn ốc, sweeping top → bottom
-          const nh = (p.neonY - this.centerY) / (this.treeHeight * 0.575); // -1 (top) .. +1 (bottom)
-          const sweep = (this.time * 0.4) % 1.0;
-          const streakPos = -1 + sweep * 2;   // -1 (top) → +1 (bottom)
-          const dist = nh - streakPos;
-          const glow = Math.exp(-Math.abs(dist) * 10.0);
-          p.alpha = glow;
-        } else {
-          // Other gifts: only the vertical sweeping light streak is visible
-          const nh = (p.y - this.centerY) / (this.treeHeight * 0.6);
-          const sweep = (this.time * 0.35) % 1.0;
-          const streakPos = 0.5 - sweep;   // +0.5 (bottom) → -0.5 (top): đi lên
-          const dist = nh - streakPos;
-          const glow = Math.exp(-Math.abs(dist) * 5.0);
-          p.alpha = glow;
-        }
-      } else if (this.mode === 1) {
-        // ð QuÃ  1: dÃ²ng sÃ¡ng cháº¡y tá»« Äá»nh xuá»ng ÄÃ¡y theo vÃ²ng xoÃ¡y cÃ¢y thÃ´ng
-        const helixHeight = (this.treeHeight || height * 0.65) * 1.15;
-        const cy = this.centerY || height * 0.52;
-        const nh = (p.neonY - cy) / helixHeight;   // -0.5 (Äá»nh) â 0.5 (ÄÃ¡y)
-        const waves = 3;                                     // sá» dáº£i sÃ¡ng trÃªn cá»t
-        const speed = 2.0;                                   // cÃ ng lá»n â cháº¡y cÃ ng nhanh
-        const wave = Math.sin((nh + 0.5) * Math.PI * 2 * waves - this.time * speed);
-        p.alpha = Math.max(0.3, Math.min(1.0, 0.4 + 0.6 * (0.5 + 0.5 * wave)));
-      } else {
-        p.alpha = Math.max(0.3, Math.min(1.0, 0.5 + Math.sin(this.time * 4 + p.phase) * 0.45));
-      }
-    }
-
-    for (let i = 0; i < this.snowflakes.length; i++) {
-      const s = this.snowflakes[i];
-      s.y += s.vy * (this.mode === 2 ? 3.0 : 1.0);
-      s.x += Math.sin(this.time + s.phase) * 0.8;
-
-      if (s.y > height + 20) {
-        s.y = -20;
-        s.x = (Math.random() - 0.5) * width * 1.5;
-      }
-    }
-
-    for (let i = this.fireworks.length - 1; i >= 0; i--) {
-      const f = this.fireworks[i];
-      f.x += f.vx;
-      f.y += f.vy;
-      f.vy += 0.12;
-      f.life -= f.decay;
-      if (f.life <= 0) {
-        this.fireworks.splice(i, 1);
-      }
-    }
-
-    // Photo Smooth Scale/Alpha Lerp
+    // Photo scale/alpha interpolation
     if (this.activePhotoImg) {
       this.photoAlpha += (1.0 - this.photoAlpha) * 0.1;
       this.photoScale += (1.0 - this.photoScale) * 0.1;
@@ -361,166 +515,223 @@ class ParticleSystem {
       this.photoAlpha += (0.0 - this.photoAlpha) * 0.15;
       this.photoScale += (0.0 - this.photoScale) * 0.15;
     }
+
+    if (this.photoAlpha > 0.05) {
+      this.photoMesh.visible = true;
+      this.auraMesh.visible = true;
+
+      const s = this.photoScale;
+      this.photoMesh.scale.set(s, s, s);
+      this.auraMesh.scale.set(s, s, s);
+
+      // Floating 3D Bobbing & Tilt
+      const bobY = 10 + Math.sin(this.time * 2) * 10;
+      const tiltZ = Math.sin(this.time * 1.5) * 0.03;
+
+      this.photoMesh.position.y = bobY;
+      this.photoMesh.rotation.z = tiltZ;
+      this.photoMesh.material.opacity = this.photoAlpha;
+
+      this.auraMesh.position.y = bobY;
+      this.auraMesh.rotation.z = tiltZ;
+      this.auraMesh.material.opacity = this.photoAlpha * 0.85;
+    } else {
+      this.photoMesh.visible = false;
+      this.auraMesh.visible = false;
+    }
+
+    // Rotation speed
+    if (isReveal) {
+      this.rotationY += (0 - this.rotationY) * 0.05; // Lock camera straight when revealing photo
+    } else {
+      const rotSpeed = (this.mode === 1 || this.mode === 8) ? 0.02 : 0.008;
+      this.rotationY += rotSpeed;
+    }
+
+    const cosR = Math.cos(this.rotationY);
+    const sinR = Math.sin(this.rotationY);
+
+    if (this.mode === 3 || this.mode === 8) {
+      this.pulseScale = 1.0 + Math.sin(this.time * 4) * 0.15;
+    } else {
+      this.pulseScale = 1.0;
+    }
+
+    const posAttr = this.geometry.attributes.position;
+    const colAttr = this.geometry.attributes.color;
+    const alphaAttr = this.geometry.attributes.alpha;
+    const count = this.particleCount;
+
+    for (let i = 0; i < count; i++) {
+      let targetX, targetY, targetZ;
+
+      if (isReveal) {
+        // Enlarge gift shape around floating photo (1.5x)
+        const boost = 1.45;
+        if (this.mode === 1) {
+          targetX = this.neonPos[i*3+0] * boost;
+          targetY = this.neonPos[i*3+1];
+          targetZ = this.neonPos[i*3+2] * boost;
+        } else if (this.mode === 2) {
+          targetX = this.icePos[i*3+0] * boost;
+          targetY = this.icePos[i*3+1];
+          targetZ = this.icePos[i*3+2] * boost;
+        } else if (this.mode === 3) {
+          targetX = this.solarPos[i*3+0] * boost * this.pulseScale;
+          targetY = this.solarPos[i*3+1];
+          targetZ = this.solarPos[i*3+2] * boost * this.pulseScale;
+        } else if (this.mode === 5) {
+          // Circular orbit around floating 3D photo card
+          const angle = this.time * 0.6 + (i / count) * Math.PI * 2;
+          const radius = 220 + (i % 120) * 0.5;
+          targetX = Math.cos(angle) * radius;
+          targetY = Math.sin(angle) * radius * 0.6;
+          targetZ = Math.sin(angle) * radius * 0.5;
+        } else {
+          targetX = this.treePos[i*3+0];
+          targetY = this.treePos[i*3+1];
+          targetZ = this.treePos[i*3+2];
+        }
+      } else if (this.mode === 1) {
+        targetX = this.neonPos[i*3+0];
+        targetY = this.neonPos[i*3+1];
+        targetZ = this.neonPos[i*3+2];
+      } else if (this.mode === 2) {
+        targetX = this.icePos[i*3+0];
+        targetY = this.icePos[i*3+1];
+        targetZ = this.icePos[i*3+2];
+      } else if (this.mode === 3) {
+        targetX = this.solarPos[i*3+0] * this.pulseScale;
+        targetY = this.solarPos[i*3+1];
+        targetZ = this.solarPos[i*3+2] * this.pulseScale;
+      } else if (this.mode === 5) {
+        // Swirl around 3D hand position
+        const angle = this.time * 2.0 + (i * 0.002);
+        const radius = (i % 300) * 1.0 + 30;
+        targetX = this.targetHand3D.x + Math.cos(angle) * radius;
+        targetY = this.targetHand3D.y + Math.sin(angle * 0.8) * radius * 0.5;
+        targetZ = Math.sin(angle) * radius;
+      } else if (this.mode === 8) {
+        targetX = this.heartPos[i*3+0] * this.pulseScale;
+        targetY = this.heartPos[i*3+1];
+        targetZ = this.heartPos[i*3+2] * this.pulseScale;
+      } else {
+        targetX = this.treePos[i*3+0];
+        targetY = this.treePos[i*3+1];
+        targetZ = this.treePos[i*3+2];
+      }
+
+      // Rotate around Y axis
+      const rx = targetX * cosR - targetZ * sinR;
+      const rz = targetX * sinR + targetZ * cosR;
+
+      // Lerp position
+      posAttr.array[i*3+0] += (rx - posAttr.array[i*3+0]) * 0.12;
+      posAttr.array[i*3+1] += (targetY - posAttr.array[i*3+1]) * 0.12;
+      posAttr.array[i*3+2] += (rz - posAttr.array[i*3+2]) * 0.12;
+
+      // Dynamic Color & Light Trail Flow Opacity
+      let color = new THREE.Color();
+      if (this.mode === 1) {
+        const hue = (this.time * 0.15 + this.hueShifts[i] / 360) % 1.0;
+        color.setHSL(hue, 1.0, 0.65);
+      } else if (this.mode === 2) {
+        const hue = 0.5 + (this.hueShifts[i] % 30) / 360;
+        color.setHSL(hue, 1.0, 0.75);
+      } else if (this.mode === 3) {
+        const hue = 0.1 + (this.hueShifts[i] % 20) / 360;
+        color.setHSL(hue, 1.0, 0.65);
+      } else if (this.mode === 8) {
+        const hue = 0.92 + (this.hueShifts[i] % 40) / 360;
+        color.setHSL(hue, 1.0, 0.68);
+      } else {
+        color.setRGB(this.colors[i*3+0], this.colors[i*3+1], this.colors[i*3+2]);
+      }
+
+      colAttr.array[i*3+0] = color.r;
+      colAttr.array[i*3+1] = color.g;
+      colAttr.array[i*3+2] = color.b;
+
+      // Poetic Light Trail Sweeping Effect
+      if (isReveal) {
+        if (this.mode === 1) {
+          const nh = (targetY - this.centerY) / (this.treeHeight * 0.55);
+          const sweep = (this.time * 0.4) % 1.0;
+          const streakPos = -1.0 + sweep * 2.0;
+          const dist = nh - streakPos;
+          alphaAttr.array[i] = Math.exp(-Math.abs(dist) * 9.0);
+        } else {
+          const nh = (targetY - this.centerY) / (this.treeHeight * 0.6);
+          const sweep = (this.time * 0.35) % 1.0;
+          const streakPos = 0.5 - sweep;
+          const dist = nh - streakPos;
+          alphaAttr.array[i] = Math.exp(-Math.abs(dist) * 5.5);
+        }
+      } else if (this.mode === 1) {
+        const helixHeight = this.treeHeight * 1.15;
+        const nh = (targetY - this.centerY) / helixHeight;
+        const wave = Math.sin((nh + 0.5) * Math.PI * 6 - this.time * 2.0);
+        alphaAttr.array[i] = Math.max(0.3, Math.min(1.0, 0.4 + 0.6 * (0.5 + 0.5 * wave)));
+      } else {
+        alphaAttr.array[i] = Math.max(0.35, Math.min(1.0, 0.5 + Math.sin(this.time * 4 + this.phases[i]) * 0.45));
+      }
+    }
+
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+    alphaAttr.needsUpdate = true;
+
+    // Snow animation
+    const snowArray = this.snowPoints.geometry.attributes.position.array;
+    for (let i = 0; i < this.snowCount; i++) {
+      snowArray[i*3+1] += this.snowVelocities[i*3+1];
+      snowArray[i*3+0] += Math.sin(this.time + i) * 0.4;
+
+      if (snowArray[i*3+1] < -500) {
+        snowArray[i*3+1] = 500;
+        snowArray[i*3+0] = (Math.random() - 0.5) * 1200;
+      }
+    }
+    this.snowPoints.geometry.attributes.position.needsUpdate = true;
+
+    // Fireworks animation
+    for (let i = this.fireworks.length - 1; i >= 0; i--) {
+      const fw = this.fireworks[i];
+      const pos = fw.geometry.attributes.position.array;
+      const vels = fw.userData.velocities;
+      const fCount = pos.length / 3;
+
+      for (let j = 0; j < fCount; j++) {
+        pos[j*3+0] += vels[j*3+0];
+        pos[j*3+1] += vels[j*3+1];
+        pos[j*3+2] += vels[j*3+2];
+        vels[j*3+1] -= 0.15; // Gravity
+      }
+
+      fw.userData.life -= fw.userData.decay;
+      fw.material.opacity = Math.max(0, fw.userData.life);
+      fw.geometry.attributes.position.needsUpdate = true;
+
+      if (fw.userData.life <= 0) {
+        this.scene.remove(fw);
+        fw.geometry.dispose();
+        fw.material.dispose();
+        this.fireworks.splice(i, 1);
+      }
+    }
   }
 
   render() {
-    const width = this.canvas.width;
-    const height = this.canvas.height;
+    this.composer.render();
+  }
 
-    const bgGrad = this.ctx.createRadialGradient(
-      width * 0.5, height * 0.4, 50,
-      width * 0.5, height * 0.5, Math.max(width, height)
-    );
-
-    if (this.mode === 8) {
-      bgGrad.addColorStop(0, '#2b081b'); bgGrad.addColorStop(0.6, '#150411'); bgGrad.addColorStop(1, '#080106');
-    } else if (this.mode === 1) {
-      bgGrad.addColorStop(0, '#1a0428'); bgGrad.addColorStop(0.6, '#0b0216'); bgGrad.addColorStop(1, '#03010c');
-    } else if (this.mode === 2) {
-      bgGrad.addColorStop(0, '#041d2c'); bgGrad.addColorStop(0.6, '#020e18'); bgGrad.addColorStop(1, '#01050a');
-    } else if (this.mode === 3) {
-      bgGrad.addColorStop(0, '#281a04'); bgGrad.addColorStop(0.6, '#140c02'); bgGrad.addColorStop(1, '#080401');
-    } else {
-      bgGrad.addColorStop(0, '#0a1931'); bgGrad.addColorStop(0.6, '#040d1a'); bgGrad.addColorStop(1, '#02050b');
-    }
-
-    this.ctx.fillStyle = bgGrad;
-    this.ctx.fillRect(0, 0, width, height);
-
-    // 1. Snowflakes
-    for (let i = 0; i < this.snowflakes.length; i++) {
-      const s = this.snowflakes[i];
-      const color = this.mode === 8 ? `hsla(340, 100%, 85%, ` : (this.mode === 2 ? `hsla(190, 100%, 90%, ` : s.color);
-      this.ctx.fillStyle = color + '0.75)';
-      this.ctx.beginPath();
-      this.ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-
-    // 2. DIRECT 3D CANVAS PHOTO & GOLD AURA RENDERER
-    if (this.photoAlpha > 0.05 && this.activePhotoImg && this.activePhotoImg.complete) {
-      this.ctx.save();
-
-      const imgW = 260 * this.photoScale;
-      const imgH = 325 * this.photoScale;
-      const px = width * 0.5;
-      const py = height * 0.48 + Math.sin(this.time * 2) * 8; // Floating 3D Bobbing
-
-      this.ctx.translate(px, py);
-      this.ctx.rotate(Math.sin(this.time * 1.5) * 0.03); // Floating 3D Tilt
-
-      try {
-        const outerR = Math.max(20, imgW * 0.7);
-        const innerR = Math.min(10, outerR * 0.3);
-        const auraGrad = this.ctx.createRadialGradient(0, 0, innerR, 0, 0, outerR);
-        auraGrad.addColorStop(0, 'rgba(255, 215, 0, 0.32)');
-        auraGrad.addColorStop(0.5, 'rgba(255, 117, 140, 0.16)');
-        auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-        this.ctx.fillStyle = auraGrad;
-        this.ctx.fillRect(-imgW * 0.75, -imgH * 0.75, imgW * 1.5, imgH * 1.5);
-
-        // Gold Frame Border
-        this.ctx.strokeStyle = '#ffd700';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeRect(-imgW / 2 - 4, -imgH / 2 - 4, imgW + 8, imgH + 8);
-
-        // Photo Image Draw — crisp & aspect-ratio preserving
-        const img = this.activePhotoImg;
-        const iw = img.naturalWidth || img.width || 1;
-        const ih = img.naturalHeight || img.height || 1;
-        const capH = 46 * this.photoScale;
-        const areaW = imgW;
-        const areaH = imgH - capH;
-        const s = Math.min(areaW / iw, areaH / ih);
-        const dw = iw * s;
-        const dh = ih * s;
-        const photoCenterY = -imgH / 2 + areaH / 2;
-
-        this.ctx.globalCompositeOperation = 'source-over';
-        this.ctx.globalAlpha = this.photoAlpha;
-        this.ctx.imageSmoothingEnabled = true;
-        this.ctx.imageSmoothingQuality = 'high';
-        this.ctx.drawImage(img, -dw / 2, photoCenterY - dh / 2, dw, dh);
-
-        // Glowing Gold Caption
-        if (this.activePhotoCaption) {
-          this.ctx.font = 'bold italic 20px "Great Vibes", cursive';
-          this.ctx.fillStyle = '#ffd700';
-          this.ctx.textAlign = 'center';
-          this.ctx.fillText(this.activePhotoCaption, 0, imgH / 2 - 22);
-        }
-      } catch (err) {
-        console.warn("Photo render caught safely:", err);
-      }
-
-      this.ctx.restore();
-    }
-
-    this.ctx.globalCompositeOperation = 'lighter';
-
-    if (this.frameCount % 2 === 0) {
-      this.particles.sort((a, b) => (a.z || 0) - (b.z || 0));
-    }
-
-    // 3. 3D Particles
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
-
-      const pZ = (p.z !== undefined && !isNaN(p.z)) ? p.z : 0;
-      const perspective = 600;
-      const scale = perspective / (perspective + pZ + 200);
-
-      const drawX = p.x;
-      const drawY = p.y;
-      const drawSize = Math.max(1.8, p.size * scale * 1.6);
-
-      let renderColor = p.color;
-
-      if (this.mode === 1) {
-        const hue = (this.time * 60 + p.hueShift) % 360;
-        renderColor = `hsla(${hue}, 100%, 65%, `;
-      } else if (this.mode === 2) {
-        const hue = 185 + (p.hueShift % 30);
-        renderColor = `hsla(${hue}, 100%, 80%, `;
-      } else if (this.mode === 3) {
-        const hue = 40 + (p.hueShift % 20);
-        renderColor = `hsla(${hue}, 100%, 75%, `;
-      } else if (this.mode === 8) {
-        const hue = (p.hueShift % 50) + 335;
-        renderColor = `hsla(${hue}, 100%, 70%, `;
-      }
-
-      const pAlpha = (p.alpha !== undefined && !isNaN(p.alpha)) ? p.alpha : 0.8;
-      const safeAlpha = Math.max(0, Math.min(1.0, pAlpha * scale * 1.4)).toFixed(2);
-      this.ctx.fillStyle = renderColor + safeAlpha + ')';
-      this.ctx.beginPath();
-      this.ctx.arc(drawX, drawY, drawSize, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-
-    // 4. Fireworks
-    for (let i = 0; i < this.fireworks.length; i++) {
-      const f = this.fireworks[i];
-      this.ctx.fillStyle = f.color + f.life.toFixed(2) + ')';
-      this.ctx.beginPath();
-      this.ctx.arc(f.x, f.y, f.size * f.life, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-
-    // 5. Canvas Particle Glowing Title
-    if (this.activePromptText) {
-      this.ctx.font = 'bold 30px "Cinzel", serif';
-      this.ctx.textAlign = 'center';
-      
-      this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
-      this.ctx.fillText(this.activePromptText, width * 0.5 + 2, height * 0.18 + 2);
-
-      this.ctx.fillStyle = '#ffd700';
-      this.ctx.fillText(this.activePromptText, width * 0.5, height * 0.18);
-    }
-
-    this.ctx.globalCompositeOperation = 'source-over';
+  resize(w, h) {
+    this.width = w;
+    this.height = h;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+    this.composer.setSize(w, h);
   }
 }
 
