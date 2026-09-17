@@ -4,7 +4,7 @@
 
 import { ParticleSystem } from './particles.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+function initApp() {
   const mainCanvas = document.getElementById('canvas');
   const webcamVideo = document.getElementById('webcam');
   const gestureCanvas = document.getElementById('gesture-canvas');
@@ -414,4 +414,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initMediaPipe();
   startCamera(); // Auto-open camera on page load (no click needed)
   renderLoop();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
