@@ -57,6 +57,7 @@ function initApp() {
   let activeMode = 0;
 
   let pendingGiftMode = null;
+  let isOpenedByGesture = false;
 
   const loadedPhotos = {};
   const photoPaths = {
@@ -147,11 +148,13 @@ function initApp() {
     particleSystem.setPromptText(`✨ ${giftInfo.title} ✨`);
   }
 
-  function confirmOpenGift() {
-    if (!pendingGiftMode) return;
+  function confirmOpenGift(fromGesture = false) {
+    const mode = pendingGiftMode || activeMode;
+    if (!mode || mode === 0) return;
 
-    const mode = pendingGiftMode;
-    pendingGiftMode = null;
+    if (fromGesture) {
+      isOpenedByGesture = true;
+    }
 
     giftPromptCard.classList.add('hidden');
     particleSystem.setPromptText(null);
@@ -176,7 +179,7 @@ function initApp() {
     }, 6000);
   }
 
-  openGiftBtn.addEventListener('click', confirmOpenGift);
+  openGiftBtn.addEventListener('click', () => confirmOpenGift(false));
 
   skipGiftBtn.addEventListener('click', () => {
     giftPromptCard.classList.add('hidden');
@@ -351,9 +354,20 @@ function initApp() {
       const gestureData = gestureDetector.processLandmarks(landmarksList);
       if (gestureData.isHandPresent) {
         if (gestureData.isThumbsUp) {
-          confirmOpenGift();
+          confirmOpenGift(true);
         } else {
+          if (isOpenedByGesture) {
+            particleSystem.clearActivePhoto();
+            isOpenedByGesture = false;
+            promptGiftForMode(activeMode);
+          }
           switchMode(gestureData.mode, gestureData.handPos);
+        }
+      } else {
+        if (isOpenedByGesture) {
+          particleSystem.clearActivePhoto();
+          isOpenedByGesture = false;
+          promptGiftForMode(activeMode);
         }
       }
     });
