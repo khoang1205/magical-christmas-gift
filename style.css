@@ -671,29 +671,201 @@ body, html {
 }
 
 @media (max-width: 850px) {
-  .dashboard {
-    flex-direction: column;
-    align-items: stretch;
+  .ui-container {
+    padding: 10px;
   }
-  .cam-card, .gesture-status-card, .controls-card {
-    width: 100%;
-    max-width: 100%;
+
+  /* Header Minimal Top Center */
+  .header {
+    padding: 6px 14px;
+    margin-top: 0;
+    border-radius: 14px;
+    background: rgba(3, 12, 28, 0.6);
+    max-width: 60%;
   }
+
   .title {
-    font-size: 1.6rem;
+    font-size: 1.15rem;
+    letter-spacing: 1px;
   }
+
+  .subtitle {
+    font-size: 0.7rem;
+    margin-top: 2px;
+  }
+
+  /* Floating Ribbon Prompt */
   .gift-prompt-card {
-    top: 90px;
-    width: 95%;
-    padding: 8px 16px;
-    font-size: 0.8rem;
+    top: 65px;
+    width: 94%;
+    padding: 6px 12px;
+    border-radius: 20px;
   }
+
   .ribbon-prompt-content {
-    flex-wrap: wrap;
+    font-size: 0.78rem;
+    gap: 6px;
     justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .ribbon-icon {
+    font-size: 1.2rem;
+  }
+
+  .ribbon-text {
+    font-size: 0.82rem;
+  }
+
+  .ribbon-hint {
+    font-size: 0.75rem;
+  }
+
+  .ribbon-btn {
+    padding: 4px 10px;
+    font-size: 0.72rem;
+  }
+
+  /* Photo Card on Mobile */
+  .photo-card {
+    width: 200px;
+    padding: 10px;
+    border-width: 2px;
+  }
+
+  #photo-img {
+    height: 180px;
+  }
+
+  .photo-caption {
+    font-size: 1.3rem;
+  }
+
+  /* Banner Greeting on Mobile */
+  .greeting-banner {
+    padding: 12px 18px;
+    border-radius: 16px;
+    width: 90%;
+    top: 20%;
+  }
+
+  .greeting-banner h2 {
+    font-size: 2.0rem;
+  }
+
+  .greeting-banner p {
+    font-size: 0.82rem;
+  }
+
+  /* Dashboard Floating Dock Layout for Mobile */
+  .dashboard {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
   }
-  .photo-card {
-    width: 220px;
+
+  /* Floating Miniature Cam Card Top-Left */
+  .cam-card {
+    position: absolute;
+    top: -80vh;
+    left: 0;
+    width: 85px;
+    padding: 6px;
+    border-radius: 12px;
+    background: rgba(10, 20, 40, 0.75);
+    z-index: 45;
+  }
+
+  .cam-header {
+    font-size: 0.65rem;
+  }
+
+  #status-text {
+    display: none;
+  }
+
+  .video-preview-wrapper {
+    height: 55px;
+  }
+
+  .icon-btn {
+    padding: 3px 6px;
+    font-size: 0.65rem;
+  }
+
+  /* Floating Miniature Gesture Badge Top-Right */
+  .gesture-status-card {
+    position: absolute;
+    top: -80vh;
+    right: 0;
+    width: auto;
+    max-width: 170px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    background: rgba(10, 20, 40, 0.75);
+    z-index: 45;
+  }
+
+  .card-label {
+    display: none;
+  }
+
+  .gesture-badge {
+    padding: 4px 8px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+
+  .gesture-icon {
+    font-size: 1.4rem;
+  }
+
+  .gesture-name {
+    font-size: 0.78rem;
+  }
+
+  .gesture-sub {
+    display: none;
+  }
+
+  /* Horizontal Scroll Minimal Controls Bar at Bottom */
+  .controls-card {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 16px;
+    background: rgba(10, 20, 40, 0.85);
+  }
+
+  .btn-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .btn-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mode-btn {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .audio-control {
+    margin-top: 4px;
+  }
+
+  .sound-btn {
+    padding: 4px 10px;
+    font-size: 0.72rem;
   }
 }
+
