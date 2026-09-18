@@ -136,7 +136,10 @@ class GestureDetector {
 
     let detectedMode = 0;
 
-    if (isHeartDetected) {
+    if (isThumbsUpDetected) {
+      // Thumbs Up 👍 is a confirm action gesture — keep current gift mode!
+      detectedMode = this.currentGesture.mode || 1;
+    } else if (isHeartDetected) {
       detectedMode = 8;
       this.currentGesture.isHeart = true;
     } else if (isFistDetected) {
