@@ -124,19 +124,21 @@ function initApp() {
   });
 
   function promptGiftForMode(mode) {
-    if (activeMode === mode && particleSystem.activePhotoImg) {
-      return;
-    }
-    particleSystem.clearActivePhoto();
-
     if (mode === 0) {
       giftPromptCard.classList.add('hidden');
       particleSystem.setPromptText(null);
+      particleSystem.clearActivePhoto();
       pendingGiftMode = null;
       return;
     }
 
+    if (activeMode === mode && particleSystem.activePhotoImg) {
+      return;
+    }
+
+    particleSystem.clearActivePhoto();
     pendingGiftMode = mode;
+
     const giftInfo = giftNames[mode] || giftNames[1];
     giftBoxIcon.textContent = giftInfo.icon;
     giftPromptTitle.textContent = giftInfo.title;
@@ -146,8 +148,10 @@ function initApp() {
   }
 
   function confirmOpenGift() {
-    const mode = pendingGiftMode || activeMode;
-    if (!mode || mode === 0) return;
+    if (!pendingGiftMode) return;
+
+    const mode = pendingGiftMode;
+    pendingGiftMode = null;
 
     giftPromptCard.classList.add('hidden');
     particleSystem.setPromptText(null);
@@ -197,7 +201,10 @@ function initApp() {
     });
 
     particleSystem.setMode(mode, handPos);
-    promptGiftForMode(mode);
+
+    if (isNewMode) {
+      promptGiftForMode(mode);
+    }
 
     const meta = gestureMeta[mode] || gestureMeta[0];
     gestureIcon.textContent = meta.icon;
