@@ -128,7 +128,7 @@ export class ParticleSystem {
 
     for (let i = 0; i < count; i++) {
       const progress = 0.12 + (i / count) * 0.80;
-      const y = (progress - 0.5) * 520;
+      const y = (0.5 - progress) * 520;
       const radius = progress * 230 * 0.82;
       const theta = Math.random() * Math.PI * 2;
 
@@ -193,7 +193,7 @@ export class ParticleSystem {
 
     for (let i = 0; i < count; i++) {
       const progress = i / count;
-      const y = (progress - 0.5) * treeHeight;
+      const y = (0.5 - progress) * treeHeight; // Top (+260) to Bottom (-260)
 
       // --- MODE 0: CLASSIC 3D CHRISTMAS TREE ---
       const tierCount = 5;
@@ -213,9 +213,9 @@ export class ParticleSystem {
 
       // --- MODE 1: CYBERPUNK HELICAL VORTEX ---
       const helixTurn = progress * Math.PI * 2 * 9;
-      const helixRadius = (0.2 + progress * 0.8) * baseRadius * 1.3;
+      const helixRadius = (0.15 + progress * 0.85) * baseRadius * 1.3;
       this.neonPos[i*3+0] = helixRadius * Math.cos(helixTurn + (i % 2 === 0 ? 0 : Math.PI));
-      this.neonPos[i*3+1] = centerY + (progress - 0.5) * treeHeight * 1.15;
+      this.neonPos[i*3+1] = centerY + y * 1.15;
       this.neonPos[i*3+2] = helixRadius * Math.sin(helixTurn + (i % 2 === 0 ? 0 : Math.PI));
 
       // --- MODE 2: FROSTED ICE CRYSTAL CYLINDER ---
