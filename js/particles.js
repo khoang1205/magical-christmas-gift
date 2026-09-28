@@ -378,7 +378,7 @@ export class ParticleSystem {
       depthTest: true
     });
     this.photoMesh = new THREE.Mesh(planeGeo, planeMat);
-    this.photoMesh.position.set(0, 0, 0);
+    this.photoMesh.position.set(0, 10, 50);
     this.photoMesh.visible = false;
     this.scene.add(this.photoMesh);
 
@@ -403,7 +403,7 @@ export class ParticleSystem {
       depthWrite: false
     });
     this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
-    this.auraMesh.position.set(0, 0, 0);
+    this.auraMesh.position.set(0, 10, 45);
     this.auraMesh.visible = false;
     this.scene.add(this.auraMesh);
   }
@@ -901,23 +901,16 @@ export class ParticleSystem {
       this.photoMesh.scale.set(s, s, s);
       this.auraMesh.scale.set(s, s, s);
 
-      // Always position photo directly in front of camera in world space
-      const bobY = Math.sin(this.time * 2) * 8;
-      const camDir = new THREE.Vector3();
-      this.camera.getWorldDirection(camDir);
+      // Floating 3D Bobbing & Tilt
+      const bobY = 10 + Math.sin(this.time * 2) * 10;
+      const tiltZ = Math.sin(this.time * 1.5) * 0.03;
 
-      // Place 320 units in front of camera
-      const photoPos = this.camera.position.clone().addScaledVector(camDir, 320);
-      photoPos.y += bobY;
-
-      this.photoMesh.position.copy(photoPos);
-      this.auraMesh.position.copy(photoPos).addScaledVector(camDir, -3); // slightly behind
-
-      // Always face camera
-      this.photoMesh.quaternion.copy(this.camera.quaternion);
-      this.auraMesh.quaternion.copy(this.camera.quaternion);
-
+      this.photoMesh.position.y = bobY;
+      this.photoMesh.rotation.z = tiltZ;
       this.photoMesh.material.opacity = this.photoAlpha;
+
+      this.auraMesh.position.y = bobY;
+      this.auraMesh.rotation.z = tiltZ;
       this.auraMesh.material.opacity = this.photoAlpha * 0.85;
     } else {
       this.photoMesh.visible = false;
