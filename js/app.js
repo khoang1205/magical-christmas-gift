@@ -94,6 +94,7 @@ function initApp() {
     1: { icon: '☝️', name: '1... Cyberpunk Helical Vortex', sub: 'Phát hiện Hộp Quà #1 (Ra hiệu 👍 để mở)' },
     2: { icon: '✌️', name: '2... Frosted Ice Crystal', sub: 'Phát hiện Hộp Quà #2 (Ra hiệu 👍 để mở)' },
     3: { icon: '🤟', name: '3... Solar Starburst Sphere', sub: 'Phát hiện Hộp Quà #3 (Ra hiệu 👍 để mở)' },
+    4: { icon: '✨', name: '✨ Particle Text Morphing', sub: 'Hạt biến thành chữ "Merry Christmas" lung linh vàng ánh' },
     5: { icon: '🖐️', name: 'Mở Tay 🖐️ (Bùng Nổ Galaxy)', sub: 'Mở xòe 5 ngón tay 🖐️ để bùng nổ Hạt Thiên Hà xoáy quanh tay' },
     8: { icon: '💖', name: 'Trái Tim Phép Thuật (Heart 3D)', sub: 'Chắp Trái Tim 💖 ➔ Mở Thiệp Tỏ Tình & Hẹn Đi Ăn 🥂' }
   };
@@ -130,14 +131,13 @@ function initApp() {
       particleSystem.setPromptText(null);
       particleSystem.clearActivePhoto();
       pendingGiftMode = null;
+      isOpenedByGesture = false;
       return;
     }
 
-    if (activeMode === mode && particleSystem.activePhotoImg) {
-      return;
-    }
-
+    // Always clear photo & prompt when switching to a new gift mode
     particleSystem.clearActivePhoto();
+    isOpenedByGesture = false;
     pendingGiftMode = mode;
 
     const giftInfo = giftNames[mode] || giftNames[1];
@@ -342,9 +342,10 @@ function initApp() {
 
     handsModel.setOptions({
       maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      modelComplexity: 0,          // 0 = fast & smooth, 1 = accurate but slow
+      selfieMode: true,            // Mirror for natural interaction
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5   // Lower tracking threshold = smoother tracking
     });
 
     handsModel.onResults((results) => {

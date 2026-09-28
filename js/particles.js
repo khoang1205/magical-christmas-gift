@@ -37,13 +37,23 @@ export class ParticleSystem {
     this.initThree();
 
     // System Geometry Anchors
-    this.particleCount = 22000;
-    this.snowCount = 800;
+    this.particleCount = 24000;
+    this.snowCount = 1000;
+
+    // Aurora wind state
+    this.auroraWind = { x: 0, y: 0 };
+    this.auroraWindTarget = { x: 0, y: 0 };
+
+    // Text morphing state
+    this.textMorphPos = null;
+    this.textMorphTime = 0;
 
     this.initBuffers();
     this.initPhotoMesh();
     this.initPromptMesh();
     this.initSnow();
+    this.initAurora();
+    this.initCandleFlames();
 
     this.fireworks = [];
   }
@@ -121,10 +131,22 @@ export class ParticleSystem {
   }
 
   init3DOrnaments() {
+    // Add lights for glass effect
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    this.scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfff0cc, 1.2);
+    dirLight.position.set(200, 400, 300);
+    this.scene.add(dirLight);
+
+    const backLight = new THREE.DirectionalLight(0x6688cc, 0.5);
+    backLight.position.set(-200, -100, -200);
+    this.scene.add(backLight);
+
     const count = 130;
-    const sphereGeo = new THREE.SphereGeometry(7, 16, 16);
+    const sphereGeo = new THREE.SphereGeometry(7, 24, 24); // Higher segments for smooth glass
     this.ornaments = [];
-    const colors = [0xff2244, 0xffd700, 0x00d2ff, 0xff00bb, 0xffffff];
+    const colors = [0xff2244, 0xffd700, 0x00d2ff, 0xff00bb, 0xffffff, 0xff6600, 0x00ff88];
 
     for (let i = 0; i < count; i++) {
       const progress = 0.12 + (i / count) * 0.80;
@@ -132,10 +154,15 @@ export class ParticleSystem {
       const radius = progress * 230 * 0.82;
       const theta = Math.random() * Math.PI * 2;
 
-      const mat = new THREE.MeshBasicMaterial({
-        color: colors[i % colors.length],
+      // Glass-like Phong Material with specular highlight
+      const baseColor = colors[i % colors.length];
+      const mat = new THREE.MeshPhongMaterial({
+        color: baseColor,
+        specular: 0xffffff,
+        shininess: 120,
         transparent: true,
-        opacity: 0.95
+        opacity: 0.90,
+        reflectivity: 0.8,
       });
       const mesh = new THREE.Mesh(sphereGeo, mat);
       const x = radius * Math.cos(theta);
@@ -178,6 +205,7 @@ export class ParticleSystem {
     this.icePos  = new Float32Array(count * 3);
     this.solarPos= new Float32Array(count * 3);
     this.heartPos= new Float32Array(count * 3);
+    this.textPos = new Float32Array(count * 3); // Mode 4: Particle Text
 
     this.hueShifts = new Float32Array(count);
     this.phases = new Float32Array(count);
@@ -315,6 +343,20 @@ export class ParticleSystem {
 
     this.points = new THREE.Points(this.geometry, this.material);
     this.scene.add(this.points);
+
+    // Pre-generate text morph positions for Mode 4
+    // Must be done after canvas is available (DOM ready)
+    setTimeout(() => {
+      const textSamples = this.generateTextMorphPositions('Merry Christmas');
+      if (textSamples.length > 0) {
+        for (let i = 0; i < count; i++) {
+          const sample = textSamples[i % textSamples.length];
+          this.textPos[i*3+0] = sample.x + (Math.random() - 0.5) * 15;
+          this.textPos[i*3+1] = sample.y + (Math.random() - 0.5) * 15;
+          this.textPos[i*3+2] = (Math.random() - 0.5) * 80;
+        }
+      }
+    }, 100);
   }
 
   initPhotoMesh() {
@@ -484,6 +526,237 @@ export class ParticleSystem {
 
     this.snowPoints = new THREE.Points(snowGeo, snowMat);
     this.scene.add(this.snowPoints);
+  }
+
+  // ── AURORA BOREALIS ──────────────────────────────────────────────────────────
+  initAurora() {
+    const segments = 80;
+    const layers = 5;
+    this.auroraMeshes = [];
+
+    for (let layer = 0; layer < layers; layer++) {
+      const positions = [];
+      const colors = [];
+      const indices = [];
+
+      const baseZ = -400 - layer * 100;
+      const baseY = 280 + layer * 25;
+      const width = 1400 + layer * 200;
+
+      for (let i = 0; i <= segments; i++) {
+        const x = (i / segments - 0.5) * width;
+        positions.push(x, baseY, baseZ);                   // top vertex
+        positions.push(x, baseY - 200 - Math.random() * 80, baseZ); // bottom vertex
+
+        const hue = (0.3 + layer * 0.08 + i / segments * 0.25) % 1.0;
+        const c = new THREE.Color().setHSL(hue, 1.0, 0.55);
+        colors.push(c.r, c.g, c.b, 0.0); // top: fades to transparent
+        colors.push(c.r, c.g, c.b, 0.6); // bottom: visible
+      }
+
+      for (let i = 0; i < segments; i++) {
+        const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+        indices.push(a, b, c,  b, d, c);
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 4));
+      geo.setIndex(indices);
+
+      const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.22 + layer * 0.04,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.userData = { layer, baseY, baseZ, width, segments, phaseOffset: Math.random() * Math.PI * 2 };
+      this.scene.add(mesh);
+      this.auroraMeshes.push(mesh);
+    }
+  }
+
+  updateAurora() {
+    if (!this.auroraMeshes) return;
+    for (const mesh of this.auroraMeshes) {
+      const { layer, baseY, baseZ, width, segments, phaseOffset } = mesh.userData;
+      const posArr = mesh.geometry.attributes.position.array;
+
+      // Smoothly shift aurora wind target
+      if (Math.random() < 0.005) {
+        this.auroraWindTarget.x = (Math.random() - 0.5) * 80;
+        this.auroraWindTarget.y = (Math.random() - 0.5) * 30;
+      }
+      this.auroraWind.x += (this.auroraWindTarget.x - this.auroraWind.x) * 0.01;
+      this.auroraWind.y += (this.auroraWindTarget.y - this.auroraWind.y) * 0.01;
+
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const x = (t - 0.5) * width;
+        const wave1 = Math.sin(t * Math.PI * 3 + this.time * 0.4 + phaseOffset) * 40;
+        const wave2 = Math.sin(t * Math.PI * 7 - this.time * 0.25 + phaseOffset * 1.3) * 15;
+        const windX = this.auroraWind.x * t;
+        const windY = this.auroraWind.y;
+
+        const topIdx = i * 6;
+        const botIdx = topIdx + 3;
+
+        posArr[topIdx]   = x + wave1 * 0.4 + windX;
+        posArr[topIdx+1] = baseY + wave1 * 0.15 + wave2 + windY;
+        posArr[topIdx+2] = baseZ + Math.sin(t * Math.PI * 2 + this.time * 0.3) * 20;
+
+        posArr[botIdx]   = x + wave1 + wave2 + windX;
+        posArr[botIdx+1] = baseY - 200 + Math.sin(t * Math.PI * 4 + this.time * 0.5 + phaseOffset) * 30 + windY;
+        posArr[botIdx+2] = baseZ + Math.cos(t * Math.PI * 2 - this.time * 0.2) * 30;
+      }
+      mesh.geometry.attributes.position.needsUpdate = true;
+
+      // Pulse aurora opacity
+      mesh.material.opacity = (0.18 + layer * 0.03) + Math.sin(this.time * 0.8 + phaseOffset) * 0.06;
+    }
+  }
+
+  // ── CANDLE FLAMES ────────────────────────────────────────────────────────────
+  initCandleFlames() {
+    const candleCount = 7;
+    const flameParticlesPerCandle = 40;
+    const total = candleCount * flameParticlesPerCandle;
+
+    const positions = new Float32Array(total * 3);
+    const colors = new Float32Array(total * 3);
+    const sizes = new Float32Array(total);
+
+    this.candleBasePositions = [];
+    this.candleFlameVels = new Float32Array(total * 3);
+    this.candleFlameLife = new Float32Array(total);
+
+    for (let c = 0; c < candleCount; c++) {
+      const angle = (c / candleCount) * Math.PI * 2;
+      const r = 180 + (c % 2) * 40;
+      const bx = Math.cos(angle) * r;
+      const by = -265; // base of tree
+      const bz = Math.sin(angle) * r;
+      this.candleBasePositions.push({ x: bx, y: by, z: bz });
+
+      for (let p = 0; p < flameParticlesPerCandle; p++) {
+        const idx = c * flameParticlesPerCandle + p;
+        positions[idx*3]   = bx + (Math.random() - 0.5) * 8;
+        positions[idx*3+1] = by + Math.random() * 30;
+        positions[idx*3+2] = bz + (Math.random() - 0.5) * 8;
+
+        this.candleFlameVels[idx*3]   = (Math.random() - 0.5) * 0.4;
+        this.candleFlameVels[idx*3+1] = Math.random() * 1.2 + 0.3;
+        this.candleFlameVels[idx*3+2] = (Math.random() - 0.5) * 0.4;
+        this.candleFlameLife[idx]     = Math.random();
+
+        const lifeCol = this.candleFlameLife[idx];
+        const col = new THREE.Color().setHSL(0.06 - lifeCol * 0.04, 1.0, 0.5 + lifeCol * 0.3);
+        colors[idx*3]   = col.r;
+        colors[idx*3+1] = col.g;
+        colors[idx*3+2] = col.b;
+
+        sizes[idx] = 5.0 + Math.random() * 8.0;
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true,
+      size: 8.0,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    this.candlePoints = new THREE.Points(geo, mat);
+    this.scene.add(this.candlePoints);
+  }
+
+  updateCandleFlames() {
+    if (!this.candlePoints) return;
+    const posArr = this.candlePoints.geometry.attributes.position.array;
+    const colArr = this.candlePoints.geometry.attributes.color.array;
+    const total = posArr.length / 3;
+    const flamePerCandle = 40;
+
+    for (let idx = 0; idx < total; idx++) {
+      const c = Math.floor(idx / flamePerCandle);
+      const base = this.candleBasePositions[c];
+
+      this.candleFlameLife[idx] += 0.025;
+      if (this.candleFlameLife[idx] > 1.0) {
+        // Reset particle to candle base
+        this.candleFlameLife[idx] = 0;
+        posArr[idx*3]   = base.x + (Math.random() - 0.5) * 6;
+        posArr[idx*3+1] = base.y;
+        posArr[idx*3+2] = base.z + (Math.random() - 0.5) * 6;
+        this.candleFlameVels[idx*3]   = (Math.random() - 0.5) * 0.5;
+        this.candleFlameVels[idx*3+1] = Math.random() * 1.3 + 0.3;
+        this.candleFlameVels[idx*3+2] = (Math.random() - 0.5) * 0.5;
+      }
+
+      // Wind influence
+      const windFlicker = Math.sin(this.time * 8 + idx * 0.3) * 0.15;
+      posArr[idx*3]   += this.candleFlameVels[idx*3] + windFlicker;
+      posArr[idx*3+1] += this.candleFlameVels[idx*3+1] * (1.0 - this.candleFlameLife[idx] * 0.3);
+      posArr[idx*3+2] += this.candleFlameVels[idx*3+2];
+
+      // Color: yellow → orange → red → transparent
+      const life = this.candleFlameLife[idx];
+      const hue = 0.07 - life * 0.05;
+      const col = new THREE.Color().setHSL(hue, 1.0, 0.6 - life * 0.2);
+      colArr[idx*3]   = col.r;
+      colArr[idx*3+1] = col.g;
+      colArr[idx*3+2] = col.b;
+    }
+
+    this.candlePoints.geometry.attributes.position.needsUpdate = true;
+    this.candlePoints.geometry.attributes.color.needsUpdate = true;
+
+    // Only show candles in classic tree mode
+    this.candlePoints.visible = (this.mode === 0);
+  }
+
+  // ── PARTICLE TEXT MORPHING ───────────────────────────────────────────────────
+  generateTextMorphPositions(text) {
+    const offscreen = document.createElement('canvas');
+    offscreen.width = 512;
+    offscreen.height = 128;
+    const ctx = offscreen.getContext('2d');
+    ctx.clearRect(0, 0, 512, 128);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 72px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 256, 64);
+
+    const imageData = ctx.getImageData(0, 0, 512, 128);
+    const data = imageData.data;
+    const points = [];
+
+    for (let y = 0; y < 128; y += 3) {
+      for (let x = 0; x < 512; x += 3) {
+        const idx = (y * 512 + x) * 4;
+        if (data[idx + 3] > 128) {
+          // Map to 3D world space: center around 0
+          points.push({
+            x: (x / 512 - 0.5) * 600,
+            y: -(y / 128 - 0.5) * 150,
+            z: 0
+          });
+        }
+      }
+    }
+    return points;
   }
 
   triggerFirework(x2D, y2D) {
@@ -685,6 +958,11 @@ export class ParticleSystem {
           targetX = Math.cos(angle) * radius;
           targetY = Math.sin(angle) * radius * 0.6;
           targetZ = Math.sin(angle) * radius * 0.5;
+      } else if (this.mode === 4) {
+          // Text morph reveal boost
+          targetX = this.textPos[i*3+0] * 1.2;
+          targetY = this.textPos[i*3+1] * 1.2;
+          targetZ = this.textPos[i*3+2];
         } else {
           targetX = this.treePos[i*3+0];
           targetY = this.treePos[i*3+1];
@@ -702,6 +980,12 @@ export class ParticleSystem {
         targetX = this.solarPos[i*3+0] * this.pulseScale;
         targetY = this.solarPos[i*3+1];
         targetZ = this.solarPos[i*3+2] * this.pulseScale;
+      } else if (this.mode === 4) {
+        // ✨ Particle Text Morphing: "Merry Christmas"
+        const breathe = Math.sin(this.time * 1.5 + this.phases[i] * 3) * 8;
+        targetX = this.textPos[i*3+0];
+        targetY = this.textPos[i*3+1] + breathe * 0.3;
+        targetZ = this.textPos[i*3+2] + breathe;
       } else if (this.mode === 5) {
         // Swirl around 3D hand position
         const angle = this.time * 2.0 + (i * 0.002);
@@ -739,6 +1023,11 @@ export class ParticleSystem {
       } else if (this.mode === 3) {
         const hue = 0.1 + (this.hueShifts[i] % 20) / 360;
         color.setHSL(hue, 1.0, 0.65);
+      } else if (this.mode === 4) {
+        // Gold & white shimmer for text
+        const hue = (0.12 + Math.sin(this.time * 0.5 + this.hueShifts[i] * 0.01) * 0.06);
+        const lightness = 0.65 + Math.sin(this.time * 3 + this.phases[i]) * 0.20;
+        color.setHSL(hue, 0.9, lightness);
       } else if (this.mode === 8) {
         const hue = 0.92 + (this.hueShifts[i] % 40) / 360;
         color.setHSL(hue, 1.0, 0.68);
@@ -779,18 +1068,29 @@ export class ParticleSystem {
     colAttr.needsUpdate = true;
     alphaAttr.needsUpdate = true;
 
-    // Snow animation
+    // ── SNOW STORM with dynamic wind ─────────────────────────────────────────
     const snowArray = this.snowPoints.geometry.attributes.position.array;
+    const windX = Math.sin(this.time * 0.12) * 1.8;  // slow gust cycles
+    const windZ = Math.cos(this.time * 0.08) * 0.9;
+
     for (let i = 0; i < this.snowCount; i++) {
       snowArray[i*3+1] += this.snowVelocities[i*3+1];
-      snowArray[i*3+0] += Math.sin(this.time + i) * 0.4;
+      snowArray[i*3+0] += windX + Math.sin(this.time * 3.5 + i * 0.1) * 0.3;  // gust + flicker
+      snowArray[i*3+2] += windZ + Math.cos(this.time * 2.8 + i * 0.07) * 0.2;
 
       if (snowArray[i*3+1] < -500) {
         snowArray[i*3+1] = 500;
-        snowArray[i*3+0] = (Math.random() - 0.5) * 1200;
+        snowArray[i*3+0] = (Math.random() - 0.5) * 1400;
+        snowArray[i*3+2] = (Math.random() - 0.5) * 900;
       }
     }
     this.snowPoints.geometry.attributes.position.needsUpdate = true;
+
+    // ── AURORA BOREALIS ───────────────────────────────────────────────────────
+    this.updateAurora();
+
+    // ── CANDLE FLAMES ─────────────────────────────────────────────────────────
+    this.updateCandleFlames();
 
     // Fireworks animation
     for (let i = this.fireworks.length - 1; i >= 0; i--) {
