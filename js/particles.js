@@ -77,6 +77,7 @@ export class ParticleSystem {
     this.camera = new THREE.PerspectiveCamera(60, this.width / this.height, 1, 4000);
     this.camera.position.set(0, 0, 750);
     this.camera.lookAt(0, 0, 0);
+    this.scene.add(this.camera); // Required for camera-space children
 
     // 4. Raycaster for hand 2D -> 3D mapping
     this.raycaster = new THREE.Raycaster();
@@ -378,9 +379,8 @@ export class ParticleSystem {
       depthTest: true
     });
     this.photoMesh = new THREE.Mesh(planeGeo, planeMat);
-    this.photoMesh.position.set(0, 10, 50);
     this.photoMesh.visible = false;
-    this.scene.add(this.photoMesh);
+    // Will be camera.add'd below (after auraMesh)
 
     // Glowing Aura Plane Mesh (Behind photo)
     const auraGeo = new THREE.PlaneGeometry(360, 440);
@@ -403,10 +403,12 @@ export class ParticleSystem {
       depthWrite: false
     });
     this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
-    this.auraMesh.position.set(0, 10, 45);
+    this.auraMesh.position.set(0, 0, -383); // camera-space: just behind photo
     this.auraMesh.visible = false;
-    this.scene.add(this.auraMesh);
-  }
+    this.camera.add(this.auraMesh); // Parented to camera → always visible
+
+    this.photoMesh.position.set(0, 0, -380); // camera-space: in front of camera
+    this.camera.add(this.photoMesh);         // Parented to camera → always visible
 
   updatePhotoTexture() {
     if (!this.activePhotoImg || !this.activePhotoImg.complete) return;
@@ -901,15 +903,10 @@ export class ParticleSystem {
       this.photoMesh.scale.set(s, s, s);
       this.auraMesh.scale.set(s, s, s);
 
-      // Floating 3D Bobbing
-      const bobY = 10 + Math.sin(this.time * 2) * 10;
-
-      this.photoMesh.position.y = bobY;
-      this.auraMesh.position.y = bobY;
-
-      // Billboard: always face camera regardless of orbit rotation
-      this.photoMesh.quaternion.copy(this.camera.quaternion);
-      this.auraMesh.quaternion.copy(this.camera.quaternion);
+      // Bob in camera-space Y (always relative to camera view, never disappears)
+      const bobY = Math.sin(this.time * 2) * 8;
+      this.photoMesh.position.set(0, bobY, -380);
+      this.auraMesh.position.set(0, bobY, -383);
 
       this.photoMesh.material.opacity = this.photoAlpha;
       this.auraMesh.material.opacity = this.photoAlpha * 0.85;
