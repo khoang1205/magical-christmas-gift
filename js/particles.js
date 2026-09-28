@@ -901,16 +901,17 @@ export class ParticleSystem {
       this.photoMesh.scale.set(s, s, s);
       this.auraMesh.scale.set(s, s, s);
 
-      // Floating 3D Bobbing & Tilt
+      // Floating 3D Bobbing
       const bobY = 10 + Math.sin(this.time * 2) * 10;
-      const tiltZ = Math.sin(this.time * 1.5) * 0.03;
 
       this.photoMesh.position.y = bobY;
-      this.photoMesh.rotation.z = tiltZ;
-      this.photoMesh.material.opacity = this.photoAlpha;
-
       this.auraMesh.position.y = bobY;
-      this.auraMesh.rotation.z = tiltZ;
+
+      // Billboard: always face camera regardless of orbit rotation
+      this.photoMesh.quaternion.copy(this.camera.quaternion);
+      this.auraMesh.quaternion.copy(this.camera.quaternion);
+
+      this.photoMesh.material.opacity = this.photoAlpha;
       this.auraMesh.material.opacity = this.photoAlpha * 0.85;
     } else {
       this.photoMesh.visible = false;

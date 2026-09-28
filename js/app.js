@@ -94,7 +94,6 @@ function initApp() {
     1: { icon: '☝️', name: '1... Cyberpunk Helical Vortex', sub: 'Phát hiện Hộp Quà #1 (Ra hiệu 👍 để mở)' },
     2: { icon: '✌️', name: '2... Frosted Ice Crystal', sub: 'Phát hiện Hộp Quà #2 (Ra hiệu 👍 để mở)' },
     3: { icon: '🤟', name: '3... Solar Starburst Sphere', sub: 'Phát hiện Hộp Quà #3 (Ra hiệu 👍 để mở)' },
-    4: { icon: '✨', name: '✨ Particle Text Morphing', sub: 'Hạt biến thành chữ "Merry Christmas" lung linh vàng ánh' },
     5: { icon: '🖐️', name: 'Mở Tay 🖐️ (Bùng Nổ Galaxy)', sub: 'Mở xòe 5 ngón tay 🖐️ để bùng nổ Hạt Thiên Hà xoáy quanh tay' },
     8: { icon: '💖', name: 'Trái Tim Phép Thuật (Heart 3D)', sub: 'Chắp Trái Tim 💖 ➔ Mở Thiệp Tỏ Tình & Hẹn Đi Ăn 🥂' }
   };
