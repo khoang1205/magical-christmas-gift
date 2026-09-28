@@ -77,7 +77,6 @@ export class ParticleSystem {
     this.camera = new THREE.PerspectiveCamera(60, this.width / this.height, 1, 4000);
     this.camera.position.set(0, 0, 750);
     this.camera.lookAt(0, 0, 0);
-    this.scene.add(this.camera); // Required for camera-space children
 
     // 4. Raycaster for hand 2D -> 3D mapping
     this.raycaster = new THREE.Raycaster();
@@ -379,8 +378,9 @@ export class ParticleSystem {
       depthTest: true
     });
     this.photoMesh = new THREE.Mesh(planeGeo, planeMat);
+    this.photoMesh.position.set(0, 0, 0);
     this.photoMesh.visible = false;
-    // Will be camera.add'd below (after auraMesh)
+    this.scene.add(this.photoMesh);
 
     // Glowing Aura Plane Mesh (Behind photo)
     const auraGeo = new THREE.PlaneGeometry(360, 440);
@@ -403,12 +403,10 @@ export class ParticleSystem {
       depthWrite: false
     });
     this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
-    this.auraMesh.position.set(0, 0, -383); // camera-space: just behind photo
+    this.auraMesh.position.set(0, 0, 0);
     this.auraMesh.visible = false;
-    this.camera.add(this.auraMesh); // Parented to camera → always visible
-
-    this.photoMesh.position.set(0, 0, -380); // camera-space: in front of camera
-    this.camera.add(this.photoMesh);         // Parented to camera → always visible
+    this.scene.add(this.auraMesh);
+  }
 
   updatePhotoTexture() {
     if (!this.activePhotoImg || !this.activePhotoImg.complete) return;
@@ -903,10 +901,21 @@ export class ParticleSystem {
       this.photoMesh.scale.set(s, s, s);
       this.auraMesh.scale.set(s, s, s);
 
-      // Bob in camera-space Y (always relative to camera view, never disappears)
+      // Always position photo directly in front of camera in world space
       const bobY = Math.sin(this.time * 2) * 8;
-      this.photoMesh.position.set(0, bobY, -380);
-      this.auraMesh.position.set(0, bobY, -383);
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
+
+      // Place 320 units in front of camera
+      const photoPos = this.camera.position.clone().addScaledVector(camDir, 320);
+      photoPos.y += bobY;
+
+      this.photoMesh.position.copy(photoPos);
+      this.auraMesh.position.copy(photoPos).addScaledVector(camDir, -3); // slightly behind
+
+      // Always face camera
+      this.photoMesh.quaternion.copy(this.camera.quaternion);
+      this.auraMesh.quaternion.copy(this.camera.quaternion);
 
       this.photoMesh.material.opacity = this.photoAlpha;
       this.auraMesh.material.opacity = this.photoAlpha * 0.85;
