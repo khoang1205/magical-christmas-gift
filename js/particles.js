@@ -531,27 +531,33 @@ export class ParticleSystem {
   // ── AURORA BOREALIS ──────────────────────────────────────────────────────────
   initAurora() {
     const segments = 80;
-    const layers = 5;
+    const layers = 4;
     this.auroraMeshes = [];
+
+    // Natural northern lights: emerald → teal → cyan → violet (no red/yellow/orange)
+    const auroraHues = [0.37, 0.46, 0.54, 0.67];
 
     for (let layer = 0; layer < layers; layer++) {
       const positions = [];
       const colors = [];
       const indices = [];
 
-      const baseZ = -400 - layer * 100;
-      const baseY = 280 + layer * 25;
-      const width = 1400 + layer * 200;
+      const baseZ = -500 - layer * 80;
+      const baseY = 300 + layer * 20;
+      const width = 1600 + layer * 150;
+
+      const baseHue = auroraHues[layer];
 
       for (let i = 0; i <= segments; i++) {
         const x = (i / segments - 0.5) * width;
-        positions.push(x, baseY, baseZ);                   // top vertex
-        positions.push(x, baseY - 200 - Math.random() * 80, baseZ); // bottom vertex
+        positions.push(x, baseY, baseZ);
+        positions.push(x, baseY - 180 - Math.random() * 60, baseZ);
 
-        const hue = (0.3 + layer * 0.08 + i / segments * 0.25) % 1.0;
-        const c = new THREE.Color().setHSL(hue, 1.0, 0.55);
-        colors.push(c.r, c.g, c.b, 0.0); // top: fades to transparent
-        colors.push(c.r, c.g, c.b, 0.6); // bottom: visible
+        // Tiny hue variation within strip only (±0.04)
+        const hue = baseHue + (i / segments - 0.5) * 0.08;
+        const c = new THREE.Color().setHSL(hue, 0.80, 0.48);
+        colors.push(c.r, c.g, c.b, 0.0);  // top: transparent
+        colors.push(c.r, c.g, c.b, 0.45); // bottom: soft
       }
 
       for (let i = 0; i < segments; i++) {
@@ -567,14 +573,14 @@ export class ParticleSystem {
       const mat = new THREE.MeshBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.22 + layer * 0.04,
+        opacity: 0.10 + layer * 0.03, // Much subtler
         side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending,
         depthWrite: false
       });
 
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData = { layer, baseY, baseZ, width, segments, phaseOffset: Math.random() * Math.PI * 2 };
+      mesh.userData = { layer, baseY, baseZ, width, segments, phaseOffset: Math.random() * Math.PI * 2, baseHue };
       this.scene.add(mesh);
       this.auroraMeshes.push(mesh);
     }
